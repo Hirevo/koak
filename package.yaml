@@ -1,0 +1,23 @@
+name:                koak
+version:             0.1.0.0
+#synopsis:
+#description:
+homepage:            https://github.com/githubuser/koak-new#readme
+license:             BSD3
+author:              Author name here
+maintainer:          example@example.com
+copyright:           2019 Author name here
+category:            Web
+extra-source-files:
+- README.md
+
+dependencies:
+  - base >= 4.7 && < 5
+  - llvm-hs-pure >= 7
+  - llvm-hs-pretty
+  - text
+
+executables:
+  koak:
+    source-dirs:      src
+    main:             Main.hs

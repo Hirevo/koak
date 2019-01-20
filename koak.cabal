@@ -1,0 +1,36 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.1.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 2402b49791f1a9afb5cb9a21452046c9820e3d666c70f9137a95a307153b1c2a
+
+name:           koak
+version:        0.1.0.0
+category:       Web
+homepage:       https://github.com/githubuser/koak-new#readme
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2019 Author name here
+license:        BSD3
+build-type:     Simple
+extra-source-files:
+    README.md
+
+executable koak
+  main-is: Main.hs
+  other-modules:
+      Codegen
+      Misc
+      Parser.Lang
+      Parser.Lib
+      Paths_koak
+  hs-source-dirs:
+      src
+  build-depends:
+      base >=4.7 && <5
+    , llvm-hs-pretty
+    , llvm-hs-pure >=7
+    , text
+  default-language: Haskell2010
