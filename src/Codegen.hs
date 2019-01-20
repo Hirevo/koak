@@ -33,17 +33,16 @@ stringPtr str nm = do
     }
     pure $ ConstantOperand $ Cst.BitCast (Cst.GlobalReference (ptr ty) nm) charStar
 
-fib :: Integer -> AST.Module
-fib i = M.buildModule "bootstrap" $ mdo
+fib :: AST.Module
+fib = M.buildModule "bootstrap" $ mdo
     arr <- stringPtr "%d\n" "PRINT_STR"
     printf <- M.extern (Name "printf") [T.ptr T.i8, T.i32] T.i32
     fib <- M.function (Name "fibonnacci") [(T.i32, M.ParameterName "n")] T.i32 $ \[n] -> mdo
         entry <- Mn.block `Mn.named` "entry"
         I.ret n
-    M.function (Name "main") [] T.i32 $ \[] -> mdo
+    M.function (Name "main") [(T.i32, M.ParameterName "ac")] T.i32 $ \[ac] -> mdo
         entry <- Mn.block `Mn.named` "entry"
-        input <- C.int32 i
-        fibVal <- I.call fib [(input, [])]
+        fibVal <- I.call fib [(ac, [])]
         I.call printf [(arr, []), (fibVal, [])]
         zero <- C.int32 0
         ret zero

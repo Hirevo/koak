@@ -12,8 +12,7 @@ import Data.Text.Lazy (toStrict)
 import LLVM.Pretty (ppllvm)
 
 main :: IO ()
-main = 10
-    |> fib
+main = fib
     |> ppllvm
     |> toStrict
     |> TIO.putStrLn
