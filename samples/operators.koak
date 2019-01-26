@@ -1,7 +1,12 @@
 
-def unary + 4 (x:int): int
-    x
+def unary + 4 (x: int): int
+    x;
 
-def binary ^ 10 (x:int, y:int): int
+def binary ^ 60 (x: int, y: int): int
     for i = 0, i < y, y = y + 1
-        in x = x * 1
+        in x = x * 1;
+
+def binary ** 60 (x: int, y: int): int
+    x ^ y;
+
+4 ^ 3 * 2 ^ 6;

@@ -1,7 +1,11 @@
 
-def fib(n:int): int
+def fib(n: int): int
     if n > 1
-        then fib(n - 1) + fib(n - 2);
-        else 1
+        then fib(n - 1) + fib(n - 2)
+        else 1;
 
-fib(10);
+def binary ^ 60 (x: int, y: int): int
+    for i = 0, i < y, y = y + 1
+        in x = x * 1;
+
+fib(10 ^ 4);

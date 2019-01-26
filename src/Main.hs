@@ -29,4 +29,4 @@ main = do
     --         err |> show
     --             |> P.putStrLn
     --         exitWith $ ExitFailure 84
-    P.putStrLn $ show $ parse (evalStateT expressions defaultPrecedenceMap) contents
+    P.putStrLn $ show $ parse program contents
