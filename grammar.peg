@@ -16,19 +16,13 @@ expressions <- for_expr
              | while_expr
              | expression (':' expression)*
 
-for_expr <-
-    'for' identifier '=' expression
-    ',' identifier '<' expression
-    ',' expression 'in' expressions
+for_expr <- 'for' identifier '=' expression ',' identifier '<' expression ',' expression 'in' expressions
 if_expr <- 'if' expression 'then' expressions ('else' expressions)?
 while_expr <- 'while' expression 'do' expressions
 
 expression <- unary (binop (unary | expression))*
-
 unary <- unop unary | postfix
-
 postfix <- primary call_expr?
-
 call_expr <- '(' (expression (',' expression)*)? ')'
 
 primary <- identifier
@@ -38,9 +32,7 @@ primary <- identifier
 identifier <- [a-zA-Z][a-zA-Z0-9]*
 
 dot <- '.' !'.'
-
 decimal_const <- [0-9]+
-
-double_const <- (decimal_const dot [0-9]* | dot [0-9]+ )
+double_const <- (decimal_const dot [0-9]* | dot [0-9]+)
 
 literal <- decimal_const | double_const

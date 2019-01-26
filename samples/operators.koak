@@ -1,0 +1,7 @@
+
+def unary + 4 (x:int): int
+    x
+
+def binary ^ 10 (x:int, y:int): int
+    for i = 0, i < y, y = y + 1
+        in x = x * 1

@@ -16,6 +16,7 @@ dependencies:
   - llvm-hs-pure >= 7
   - llvm-hs-pretty
   - text
+  - mtl
 
 executables:
   koak:

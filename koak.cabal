@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 2402b49791f1a9afb5cb9a21452046c9820e3d666c70f9137a95a307153b1c2a
+-- hash: 34ed313b742e5de97bd19fb81139df5529d6157a89fe8a9817654392e42e2c58
 
 name:           koak
 version:        0.1.0.0
@@ -21,10 +21,12 @@ extra-source-files:
 executable koak
   main-is: Main.hs
   other-modules:
+      Checker
       Codegen
       Misc
       Parser.Lang
       Parser.Lib
+      Unifier
       Paths_koak
   hs-source-dirs:
       src
@@ -32,5 +34,6 @@ executable koak
       base >=4.7 && <5
     , llvm-hs-pretty
     , llvm-hs-pure >=7
+    , mtl
     , text
   default-language: Haskell2010

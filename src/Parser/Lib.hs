@@ -1,6 +1,7 @@
 module Parser.Lib where
 
 import Control.Applicative
+import Control.Monad
 
 data ParseError =
     NotMatched
@@ -56,6 +57,10 @@ instance Monad Parser where
     Parser a >>= f = Parser $ \str -> do
         (ret, str') <- a str
         parse (f ret) str'
+
+instance MonadPlus Parser where
+    mzero = empty
+    mplus = (<|>)
 
 -- |This function "peeks" if the following input would match the given parser.
 -- It takes any parser and returns the same one but made non-consuming.
