@@ -1,6 +1,6 @@
 
-def unary + 4 (x: int): int
-    x;
+def unary ! 5 (x: int): int
+    if x then 0 else 1;
 
 def binary ^ 60 (x: int, y: int): int
     for i = 0, i < y, y = y + 1
@@ -9,4 +9,10 @@ def binary ^ 60 (x: int, y: int): int
 def binary ** 60 (x: int, y: int): int
     x ^ y;
 
-4 ^ 3 * 2 ^ 6;
+def binary && 12 (x: int, y: int): int
+    if x then y else x;
+
+def binary || 11 (x: int, y: int): int
+    if x then x else y;
+
+4 ^ 3 * 2 ** (6 : 4) && 2;

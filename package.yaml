@@ -17,6 +17,7 @@ dependencies:
   - llvm-hs-pretty
   - text
   - mtl
+  - transformers
 
 executables:
   koak:

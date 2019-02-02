@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 34ed313b742e5de97bd19fb81139df5529d6157a89fe8a9817654392e42e2c58
+-- hash: 2ab61000cbc122c67692a807a33ccd76c735c50cfa2c129c95f09db5c741bc2f
 
 name:           koak
 version:        0.1.0.0
@@ -36,4 +36,5 @@ executable koak
     , llvm-hs-pure >=7
     , mtl
     , text
+    , transformers
   default-language: Haskell2010
