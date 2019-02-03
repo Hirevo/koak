@@ -183,6 +183,7 @@ literal :: Parser Literal
 literal =
     doubleConst
     <|> decimalConst
+    <|> (const VoidLiteral <$> pString "()")
 
 spacing :: Parser String
 spacing = some $ satisfy isSpace
