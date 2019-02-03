@@ -63,7 +63,10 @@ instance Show ConcreteType where
     show TInt = "int"
     show TFloat = "double"
     show TVoid = "void"
-    show (TFun tvars args ret) = "<" ++ concat (intersperse ", " $ map ('\'' :) tvars) ++ ">" ++ "(" ++ concat (intersperse ", " $ map show args) ++ ") -> " ++ show ret
+    show (TFun tvars args ret) =
+        "<" ++ concat (intersperse ", " $ map ('\'' :) tvars) ++ ">"
+        ++ "(" ++ concat (intersperse ", " $ map show args) ++ ") -> "
+        ++ show ret
 data Type =
     TCon ConcreteType
     | TVar Name
