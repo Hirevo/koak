@@ -24,12 +24,28 @@ main :: IO ()
 main = do
     [filename] <- getArgs
     contents <- readFile filename
+    putStrLn "Built-in binary operators:"
+    putStrLn $ "  (+): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
+    putStrLn $ "  (-): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
+    putStrLn $ "  (*): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
+    putStrLn $ "  (/): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
+    putStrLn $ "  (<): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
+    putStrLn $ "  (>): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
+    putStrLn $ "  (==): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
+    putStrLn $ "  (!=): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
+    putStrLn $ "  (:): " ++ show (TUni [TFun [TUni [TInt, TFloat], TInt] TInt, TFun [TUni [TInt, TFloat], TFloat] TFloat])
+    putStrLn ""
+    putStrLn "Built-in unary operators:"
+    putStrLn $ "  (!): " ++ show (TUni [TFun [TInt] TInt, TFun [TFloat] TInt])
+    putStrLn $ "  (-): " ++ show (TUni [TFun [TInt] TInt, TFun [TFloat] TFloat])
+    putStrLn ""
     case parse program contents of
         Parsed (ast, _) -> do
             case ast |> inferAST of
                 Left err -> P.putStrLn $ show err
                 Right types -> do
-                    putStrLn "Success:"
+                    putStrLn "Type-checked successfully !"
+                    putStrLn "Expression types:"
                     putStrLn $ concat $ intersperse "\n" $ map show types
             exitWith ExitSuccess
         NotParsed err -> do
