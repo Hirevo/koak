@@ -25,19 +25,19 @@ main = do
     [filename] <- getArgs
     contents <- readFile filename
     putStrLn "Built-in binary operators:"
-    putStrLn $ "  (+): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
-    putStrLn $ "  (-): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
-    putStrLn $ "  (*): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
-    putStrLn $ "  (/): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
-    putStrLn $ "  (<): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
-    putStrLn $ "  (>): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
-    putStrLn $ "  (==): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
-    putStrLn $ "  (!=): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
-    putStrLn $ "  (:): " ++ show (TUni [TFun [TUni [TInt, TFloat], TInt] TInt, TFun [TUni [TInt, TFloat], TFloat] TFloat])
+    putStrLn $ "  (+): " ++ show (TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a")))
+    putStrLn $ "  (-): " ++ show (TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a")))
+    putStrLn $ "  (*): " ++ show (TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a")))
+    putStrLn $ "  (/): " ++ show (TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a")))
+    putStrLn $ "  (<): " ++ show (TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt)))
+    putStrLn $ "  (>): " ++ show (TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt)))
+    putStrLn $ "  (==): " ++ show (TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt)))
+    putStrLn $ "  (!=): " ++ show (TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt)))
+    putStrLn $ "  (:): " ++ show (TCon (TFun ["a", "b"] [TVar "a", TVar "b"] (TVar "b")))
     putStrLn ""
     putStrLn "Built-in unary operators:"
-    putStrLn $ "  (!): " ++ show (TUni [TFun [TInt] TInt, TFun [TFloat] TInt])
-    putStrLn $ "  (-): " ++ show (TUni [TFun [TInt] TInt, TFun [TFloat] TFloat])
+    putStrLn $ "  (!): " ++ show (TCon (TFun ["a"] [TVar "a"] (TCon TInt)))
+    putStrLn $ "  (-): " ++ show (TCon (TFun ["a"] [TVar "a"] (TVar "a")))
     putStrLn ""
     case parse program contents of
         Parsed (ast, _) -> do
