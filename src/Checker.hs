@@ -66,7 +66,8 @@ instance Show Type where
     show TVoid = "void"
     show (TFun args ret) = "(" ++ concat (intersperse ", " $ map show args) ++ ") -> " ++ show ret
     show (TUni tys) =
-        concat (intersperse "|" $ map (\x -> if isFun x then "(" ++ show x ++ ")" else show x) tys)
+        concat (intersperse " | "
+            $ map (\x -> if isFun x then "(" ++ show x ++ ")" else show x) tys)
 
 isFun :: Type -> Bool
 isFun (TFun _ _) = True
@@ -128,8 +129,12 @@ instance Infer (P.OpDefn P.Untyped) where
             then do
                 let ty = TFun tys expected
                 case arity of
-                    P.Binary -> lift $ modify $ \env -> env { bin_ops = (op, ty) : bin_ops env }
-                    P.Unary -> lift $ modify $ \env -> env { un_ops = (op, ty) : un_ops env }
+                    P.Binary -> lift $ modify $ \env -> env {
+                        bin_ops = (op, ty) : bin_ops env
+                    }
+                    P.Unary -> lift $ modify $ \env -> env {
+                        un_ops = (op, ty) : un_ops env
+                    }
                 return ty
             else throwE $ TypeErr $ TypeError {
                 expected = expected,
@@ -139,7 +144,9 @@ instance Infer (P.OpDefn P.Untyped) where
 instance Infer P.Arg where
     infer P.Arg { P.arg_name = name, P.arg_type = arg_ty } = do
         ty <- infer arg_ty
-        lift $ modify $ \env -> env { vars = ((name, ty) : head (vars env)) : tail (vars env) }
+        lift $ modify $ \env -> env {
+            vars = ((name, ty) : head (vars env)) : tail (vars env)
+        }
         return ty
 
 -- TODO: Check if fn already exists (in any scope ?).
