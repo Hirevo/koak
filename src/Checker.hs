@@ -53,24 +53,27 @@ instance Show AssignError where
         "AssignError (expected identifier on the left-hand side of an assignment)"
 
 type Name = String
-data Type =
+data ConcreteType =
     TInt
     | TFloat
     | TVoid
-    | TFun [Type] Type
-    | TUni [Type]
+    | TFun [Name] [Type] Type
     deriving (Eq)
-instance Show Type where
+instance Show ConcreteType where
     show TInt = "int"
     show TFloat = "double"
     show TVoid = "void"
-    show (TFun args ret) = "(" ++ concat (intersperse ", " $ map show args) ++ ") -> " ++ show ret
-    show (TUni tys) =
-        concat (intersperse " | "
-            $ map (\x -> if isFun x then "(" ++ show x ++ ")" else show x) tys)
+    show (TFun tvars args ret) = "<" ++ concat (intersperse ", " $ map ('\'' :) tvars) ++ ">" ++ "(" ++ concat (intersperse ", " $ map show args) ++ ") -> " ++ show ret
+data Type =
+    TCon ConcreteType
+    | TVar Name
+    deriving (Eq)
+instance Show Type where
+    show (TCon ty) = show ty
+    show (TVar name) = '\'' : name
 
 isFun :: Type -> Bool
-isFun (TFun _ _) = True
+isFun (TCon TFun{}) = True
 isFun _ = False
 
 data Typed a =
@@ -111,19 +114,18 @@ class Infer a where
     infer :: a -> Inferred Type
 
 instance Unify Type where
-    unify ty (TUni tys) | elem ty tys = Just ty
-    unify t1 t2 | t1 == t2 = Just t1
+    unify t1@(TCon _) t2@(TCon _) | t1 == t2 = Just t1
     unify _ _ = Nothing
 
 instance Infer P.Type where
-    infer P.IntType = return TInt
-    infer P.FloatType = return TFloat
-    infer P.VoidType = return TVoid
+    infer P.IntType = return $ TCon TInt
+    infer P.FloatType = return $ TCon TFloat
+    infer P.VoidType = return $ TCon TVoid
 
 instance Infer P.Literal where
-    infer (P.IntLiteral _) = return TInt
-    infer (P.FloatLiteral _) = return TFloat
-    infer P.VoidLiteral = return TVoid
+    infer (P.IntLiteral _) = return $ TCon TInt
+    infer (P.FloatLiteral _) = return $ TCon TFloat
+    infer P.VoidLiteral = return $ TCon TVoid
 
 instance Infer (P.Stmt P.Untyped) where
     infer (P.DefnStmt (P.Untyped defn)) = infer defn
@@ -140,12 +142,12 @@ instance Infer (P.OpDefn P.Untyped) where
         P.opdefn_arity = arity,
         P.opdefn_args = args,
         P.opdefn_ret_ty = ret_ty,
-        P.opdefn_body = (P.Untyped body)
+        P.opdefn_body = P.Untyped body
     } = do
         lift newScope
         tys <- sequence $ map (\(P.Untyped a) -> infer a) args
         expected <- infer ret_ty
-        let ty = TFun tys expected
+        let ty = TCon $ TFun [] tys expected
         case arity of
             P.Binary -> lift $ pushBinOp (op, ty)
             P.Unary -> lift $ pushUnOp (op, ty)
@@ -170,12 +172,12 @@ instance Infer (P.FnDefn P.Untyped) where
         P.fndefn_name = name,
         P.fndefn_args = args,
         P.fndefn_ret_ty = ret_ty,
-        P.fndefn_body = (P.Untyped body)
+        P.fndefn_body = P.Untyped body
     } = do
         lift newScope
         tys <- sequence $ map (\(P.Untyped a) -> infer a) args
         expected <- infer ret_ty
-        let ty = TFun tys expected
+        let ty = TCon $ TFun [] tys expected
         lift $ pushFnDef (name, ty)
         inferred <- infer body
         lift dropScope
@@ -188,10 +190,10 @@ instance Infer (P.FnDefn P.Untyped) where
 
 instance Infer (P.ForExpr P.Untyped) where
     infer P.ForExpr {
-        P.for_init = (P.Untyped init),
-        P.for_cond = (P.Untyped cond),
-        P.for_oper = (P.Untyped oper),
-        P.for_body = (P.Untyped body)
+        P.for_init = P.Untyped init,
+        P.for_cond = P.Untyped cond,
+        P.for_oper = P.Untyped oper,
+        P.for_body = P.Untyped body
     } = do
         lift newScope
         tys <- sequence $ map infer [init, cond, oper]
@@ -201,8 +203,8 @@ instance Infer (P.ForExpr P.Untyped) where
 
 instance Infer (P.IfExpr P.Untyped) where
     infer P.IfExpr {
-        P.if_cond = (P.Untyped cond),
-        P.if_then = (P.Untyped body),
+        P.if_cond = P.Untyped cond,
+        P.if_then = P.Untyped body,
         P.if_else = else_block
     } = do
         lift newScope
@@ -263,8 +265,8 @@ instance Infer (P.BinExpr P.Untyped) where
             _ -> throwE $ AssignErr AssignError
     infer P.BinExpr {
         P.bin_op = name,
-        P.bin_lhs = lhs,
-        P.bin_rhs = rhs
+        P.bin_lhs = P.Untyped lhs,
+        P.bin_rhs = P.Untyped rhs
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { bin_ops } ->
@@ -273,7 +275,7 @@ instance Infer (P.BinExpr P.Untyped) where
                 (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
                 return
                 found
-        args_tys <- sequence $ map (\(P.Untyped a) -> infer a) [lhs, rhs]
+        args_tys <- sequence $ map infer [lhs, rhs]
         case apply fun_ty args_tys of
             Right ty -> return ty
             Left err -> throwE err
@@ -281,7 +283,7 @@ instance Infer (P.BinExpr P.Untyped) where
 instance Infer (P.UnExpr P.Untyped) where
     infer P.UnExpr {
         P.un_op = name,
-        P.un_arg = arg
+        P.un_arg = P.Untyped arg
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { un_ops } ->
@@ -290,7 +292,7 @@ instance Infer (P.UnExpr P.Untyped) where
                 (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
                 return
                 found
-        args_tys <- sequence $ map (\(P.Untyped a) -> infer a) [arg]
+        args_tys <- sequence $ map infer [arg]
         case apply fun_ty args_tys of
             Right ty -> return ty
             Left err -> throwE err
@@ -311,24 +313,42 @@ instance Infer (P.Expr P.Untyped) where
     infer (P.Un (P.Untyped unExpr)) = infer unExpr
     infer (P.Bin (P.Untyped binExpr)) = infer binExpr
 
+apply' :: (Type, Type) -> ExceptT Error (State Scope) Type
+apply' (TVar n, expected@(TCon _)) = do
+    maybe_ty <- lift $ gets $ lookup n
+    maybe
+        (do { modify $ \scope -> (n, expected) : scope ; return expected })
+        (\got -> maybe
+            (throwE $ TypeErr $ TypeError { expected, got })
+            return
+            (got <-> expected))
+        maybe_ty
+apply' (got@(TCon _), expected@(TCon _)) =
+    maybe
+        (throwE $ TypeErr $ TypeError { expected, got })
+        return
+        (got <-> expected)
+
 -- Applies an argument list to a function, returning its result type if all types matches.
--- Supports union types.
+-- Supports parametric polymorphism.
 apply :: Type -> [Type] -> Either Error Type
-apply (TFun t1s t2) t3s | length t1s == length t3s = do
+apply (TCon (TFun tvars t1s t2)) t3s | length t1s == length t3s = do
     let zipped = zip t1s t3s
-    let unified = map (uncurry $ flip (<->)) zipped
-    if all isJust unified
-        then Right t2
-        else let idx = fromJust $ findIndex isNothing unified
-                 (expected, got) = zipped !! idx
-        in Left $ TypeErr $ TypeError { expected, got }
-apply (TFun t1s t2) t3s = Left $ ArgCountErr $ ArgCountError { expected = length t1s, got = length t3s }
-apply (TUni ts) t3s | all isFun ts =
-    let ret = map (`apply` t3s) ts
-    in fromMaybe (fromJust $ find isLeft ret) (find isRight ret)
+    (unified, scope) <- (\(out, state) -> do { out' <- out ; return (out', state) })
+        $ runState (runExceptT $ sequence $ map apply' zipped) []
+    case t2 of
+        TVar n -> maybe
+            (Left $ NotInScopeErr $ NotInScopeError { ident = n })
+            return
+            (lookup n scope)
+        TCon _ -> return t2
+apply (TCon (TFun _ t1s _)) t3s =
+    Left $ ArgCountErr $ ArgCountError { expected = length t1s, got = length t3s }
 
 inferAST :: P.AST P.Untyped -> Either Error [Type]
-inferAST ast = evalState (runExceptT $ sequence $ map (\(P.Untyped a) -> infer a) ast) defaultEnv
+inferAST ast =
+    let inferred = sequence $ map (\(P.Untyped a) -> infer a) ast
+    in evalState (runExceptT inferred) defaultEnv
 
 -- TODO: AST annotation
 -- annotateAST :: P.AST P.Untyped -> Either Error (P.AST Typed)
@@ -338,19 +358,19 @@ inferAST ast = evalState (runExceptT $ sequence $ map (\(P.Untyped a) -> infer a
 defaultEnv :: Env
 defaultEnv = Env {
     bin_ops = [
-        ( "+", TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat]),
-        ( "-", TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat]),
-        ( "*", TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat]),
-        ( "/", TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat]),
-        ( "<", TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat]   TInt]),
-        ( ">", TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat]   TInt]),
-        ("==", TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat]   TInt]),
-        ("!=", TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat]   TInt]),
-        ( ":", TUni [TFun [TUni [TInt, TFloat], TInt] TInt, TFun [TUni [TInt, TFloat], TFloat] TFloat])
+        ( "+", TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a"))),
+        ( "-", TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a"))),
+        ( "*", TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a"))),
+        ( "/", TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a"))),
+        ( "<", TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt))),
+        ( ">", TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt))),
+        ("==", TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt))),
+        ("!=", TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt))),
+        ( ":", TCon (TFun ["a", "b"] [TVar "a", TVar "b"] (TVar "b")))
     ],
     un_ops = [
-        ("!", TUni [TFun [TInt] TInt, TFun [TFloat] TInt]),
-        ("-", TUni [TFun [TInt] TInt, TFun [TFloat] TFloat])
+        ("!", TCon (TFun ["a"] [TVar "a"] (TCon TInt))),
+        ("-", TCon (TFun ["a"] [TVar "a"] (TVar "a")))
     ],
     fn_defs = [],
     vars = []
