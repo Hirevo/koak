@@ -77,7 +77,7 @@ data Typed a =
     Typed Type a
     deriving (Show, Eq, Functor)
 
-type Scope = [(String, Type)]
+type Scope = [(Name, Type)]
 data Env = Env {
     bin_ops :: Scope,
     un_ops :: Scope,
@@ -85,6 +85,27 @@ data Env = Env {
     vars :: [Scope]
 } deriving (Show, Eq)
 type Inferred = ExceptT Error (State Env)
+
+pushVar :: (Name, Type) -> State Env ()
+pushVar def = modify $ \env ->
+    if null $ vars env
+        then env { vars = [[def]] }
+        else env { vars = (def : head (vars env)) : tail (vars env) }
+
+newScope :: State Env ()
+newScope = modify $ \env -> env { vars = [] : vars env }
+
+dropScope :: State Env ()
+dropScope = modify $ \env -> env { vars = tail $ vars env }
+
+pushFnDef :: (Name, Type) -> State Env ()
+pushFnDef def = modify $ \env -> env { fn_defs = def : fn_defs env }
+
+pushBinOp :: (Name, Type) -> State Env ()
+pushBinOp def = modify $ \env -> env { bin_ops = def : bin_ops env }
+
+pushUnOp :: (Name, Type) -> State Env ()
+pushUnOp def = modify $ \env -> env { un_ops = def : un_ops env }
 
 class Infer a where
     infer :: a -> Inferred Type
@@ -121,21 +142,17 @@ instance Infer (P.OpDefn P.Untyped) where
         P.opdefn_ret_ty = ret_ty,
         P.opdefn_body = (P.Untyped body)
     } = do
-        lift $ modify $ \env -> env { vars = [] : vars env }
+        lift newScope
         tys <- sequence $ map (\(P.Untyped a) -> infer a) args
         expected <- infer ret_ty
+        let ty = TFun tys expected
+        case arity of
+            P.Binary -> lift $ pushBinOp (op, ty)
+            P.Unary -> lift $ pushUnOp (op, ty)
         inferred <- infer body
+        lift dropScope
         if inferred == expected
-            then do
-                let ty = TFun tys expected
-                case arity of
-                    P.Binary -> lift $ modify $ \env -> env {
-                        bin_ops = (op, ty) : bin_ops env
-                    }
-                    P.Unary -> lift $ modify $ \env -> env {
-                        un_ops = (op, ty) : un_ops env
-                    }
-                return ty
+            then return ty
             else throwE $ TypeErr $ TypeError {
                 expected = expected,
                 got = inferred
@@ -144,9 +161,7 @@ instance Infer (P.OpDefn P.Untyped) where
 instance Infer P.Arg where
     infer P.Arg { P.arg_name = name, P.arg_type = arg_ty } = do
         ty <- infer arg_ty
-        lift $ modify $ \env -> env {
-            vars = ((name, ty) : head (vars env)) : tail (vars env)
-        }
+        lift $ pushVar (name, ty)
         return ty
 
 -- TODO: Check if fn already exists (in any scope ?).
@@ -157,21 +172,15 @@ instance Infer (P.FnDefn P.Untyped) where
         P.fndefn_ret_ty = ret_ty,
         P.fndefn_body = (P.Untyped body)
     } = do
+        lift newScope
         tys <- sequence $ map (\(P.Untyped a) -> infer a) args
         expected <- infer ret_ty
         let ty = TFun tys expected
-        lift $ modify $ \env -> env {
-            fn_defs = (name, ty) : fn_defs env,
-            vars = [] : vars env
-        }
+        lift $ pushFnDef (name, ty)
         inferred <- infer body
-        lift $ modify $ \env -> env { vars = tail $ vars env }
+        lift dropScope
         if inferred == expected
-            then do
-                lift $ modify $ \env -> env {
-                    vars = ((name, ty) : head (vars env)) : tail (vars env)
-                }
-                return ty
+            then return ty
             else throwE $ TypeErr $ TypeError {
                 expected = expected,
                 got = inferred
@@ -184,10 +193,10 @@ instance Infer (P.ForExpr P.Untyped) where
         P.for_oper = (P.Untyped oper),
         P.for_body = (P.Untyped body)
     } = do
-        lift $ modify $ \env -> env { vars = [] : vars env }
+        lift newScope
         tys <- sequence $ map infer [init, cond, oper]
         ty <- infer body
-        lift $ modify $ \env -> env { vars = tail $ vars env }
+        lift dropScope
         return ty
 
 instance Infer (P.IfExpr P.Untyped) where
@@ -196,13 +205,13 @@ instance Infer (P.IfExpr P.Untyped) where
         P.if_then = (P.Untyped body),
         P.if_else = else_block
     } = do
-        lift $ modify $ \env -> env { vars = [] : vars env }
+        lift newScope
         cond_ty <- infer cond
         then_ty <- infer body
-        maybe (do { lift $ modify $ \env -> env { vars = tail $ vars env } ; return then_ty })
+        maybe (do { lift dropScope ; return then_ty })
             (\(P.Untyped block) -> do
                 else_ty <- infer block
-                lift $ modify $ \env -> env { vars = tail $ vars env }
+                lift dropScope
                 if then_ty == else_ty
                     then return then_ty
                     else throwE $ TypeErr $ TypeError {
@@ -216,10 +225,10 @@ instance Infer (P.WhileExpr P.Untyped) where
         P.while_cond = (P.Untyped cond),
         P.while_body = (P.Untyped body)
     } = do
-        lift $ modify $ \env -> env { vars = [] : vars env }
+        lift newScope
         cond_ty <- infer cond
         body_ty <- infer body
-        lift $ modify $ \env -> env { vars = tail $ vars env }
+        lift dropScope
         return body_ty
 
 instance Infer (P.CallExpr P.Untyped) where
@@ -249,7 +258,7 @@ instance Infer (P.BinExpr P.Untyped) where
         ty <- infer rhs
         case lhs of
             P.Ident (P.Untyped name) -> do
-                lift $ modify $ \env -> env { vars = ((name, ty) : head (vars env)) : tail (vars env) }
+                lift $ pushVar (name, ty)
                 return ty
             _ -> throwE $ AssignErr AssignError
     infer P.BinExpr {

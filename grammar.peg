@@ -16,7 +16,7 @@ expressions <- for_expr
              | while_expr
              | expression (':' expression)*
 
-for_expr <- 'for' identifier '=' expression ',' identifier '<' expression ',' expression 'in' expressions
+for_expr <- 'for' expression ',' expression ',' expression 'in' expressions
 if_expr <- 'if' expression 'then' expressions ('else' expressions)?
 while_expr <- 'while' expression 'do' expressions
 
@@ -35,4 +35,4 @@ dot <- '.' !'.'
 decimal_const <- [0-9]+
 double_const <- (decimal_const dot [0-9]* | dot [0-9]+)
 
-literal <- decimal_const | double_const
+literal <- decimal_const | double_const | '()'
