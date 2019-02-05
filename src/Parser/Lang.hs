@@ -186,10 +186,10 @@ literal =
     <|> (const VoidLiteral <$> pString "()")
 
 spacing :: Parser String
-spacing = some $ satisfy isSpace
+spacing = some (satisfy isSpace <|> (pString "--" *> whileNot (pChar '\n') *> pChar '\n'))
 
 optSpacing :: Parser String
-optSpacing = many $ satisfy isSpace
+optSpacing = many (satisfy isSpace <|> (pString "--" *> whileNot (pChar '\n') *> pChar '\n'))
 
 expressions :: KoakParser (Expr Untyped)
 expressions =

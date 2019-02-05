@@ -1,0 +1,4 @@
+
+5 + 2;      -- Should compile just fine: <int: Num>(int, int) -> int
+4.0 + 3.0;  -- Should compile just fine: <double: Num>(double, double) -> double
+() + ();    -- Should fail to compile as 'void' does not conform to the 'Num' constraint
