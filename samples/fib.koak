@@ -10,7 +10,7 @@ def binary ^ 60 (x: int, y: int): int
 
 def binary ^' 60 (x: double, y: int): double
     for i = 0, i < y, y = y + 1
-        in x = x * x;
+        in x = x * x; 
 
 fib(10 ^ 4);
 10.2 ^' 4;

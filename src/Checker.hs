@@ -5,27 +5,32 @@
 module Checker where
 
 import Unifier
+import Misc
 import qualified Parser.Lang as P
+import Types as T
 import Control.Monad.State.Lazy
 import Control.Monad.Trans.Except
-import Control.Monad.Except
-import Control.Monad.Reader
 import Control.Applicative
 import Data.List (find, findIndex, intersperse)
 import Data.Maybe (isJust, isNothing, fromJust, fromMaybe)
 import Data.Either (isRight, isLeft)
+import qualified Data.Map as Map
 
 data Error =
     TypeErr TypeError
     | ArgCountErr ArgCountError
     | NotInScopeErr NotInScopeError
     | AssignErr AssignError
+    | NotImplTraitErr NotImplTraitError
+    | TraitNotInScopeErr TraitNotInScopeError
     deriving (Eq)
 instance Show Error where
-    show (TypeErr err) = "error: " ++ show err
-    show (ArgCountErr err) = "error: " ++ show err
-    show (NotInScopeErr err) = "error: " ++ show err
-    show (AssignErr err) = "error: " ++ show err
+    show (TypeErr err) = show err
+    show (ArgCountErr err) = show err
+    show (NotInScopeErr err) = show err
+    show (AssignErr err) = show err
+    show (NotImplTraitErr err) = show err
+    show (TraitNotInScopeErr err) = show err
 data TypeError = TypeError {
     expected :: Type,
     got :: Type
@@ -51,33 +56,20 @@ data AssignError = AssignError deriving (Eq)
 instance Show AssignError where
     show AssignError =
         "AssignError (expected identifier on the left-hand side of an assignment)"
-
-type Name = String
-data ConcreteType =
-    TInt
-    | TFloat
-    | TVoid
-    | TFun [Name] [Type] Type
-    deriving (Eq)
-instance Show ConcreteType where
-    show TInt = "int"
-    show TFloat = "double"
-    show TVoid = "void"
-    show (TFun tvars args ret) =
-        "<" ++ concat (intersperse ", " $ map ('\'' :) tvars) ++ ">"
-        ++ "(" ++ concat (intersperse ", " $ map show args) ++ ") -> "
-        ++ show ret
-data Type =
-    TCon ConcreteType
-    | TVar Name
-    deriving (Eq)
-instance Show Type where
-    show (TCon ty) = show ty
-    show (TVar name) = '\'' : name
-
-isFun :: Type -> Bool
-isFun (TCon TFun{}) = True
-isFun _ = False
+data NotImplTraitError = NotImplTraitError {
+    ty :: TCon,
+    trait :: Trait
+} deriving (Eq)
+instance Show NotImplTraitError where
+    show NotImplTraitError { ty, trait } =
+        "NotImplTraitError: The type '" ++ show ty ++ "' does not implement the '"
+            ++ show trait ++ "' trait."
+newtype TraitNotInScopeError = TraitNotInScopeError {
+    trait :: Trait
+} deriving (Eq)
+instance Show TraitNotInScopeError where
+    show TraitNotInScopeError { trait } =
+        "TraitNotInScopeError: The trait '" ++ show trait ++ "' is not defined."
 
 data Typed a =
     Typed Type a
@@ -98,20 +90,19 @@ pushVar def = modify $ \env ->
         then env { vars = [[def]] }
         else env { vars = (def : head (vars env)) : tail (vars env) }
 
-newScope :: State Env ()
+newScope, dropScope :: State Env ()
 newScope = modify $ \env -> env { vars = [] : vars env }
-
-dropScope :: State Env ()
 dropScope = modify $ \env -> env { vars = tail $ vars env }
 
-pushFnDef :: (Name, Type) -> State Env ()
+pushFnDef, pushBinOp, pushUnOp :: (Name, Type) -> State Env ()
 pushFnDef def = modify $ \env -> env { fn_defs = def : fn_defs env }
-
-pushBinOp :: (Name, Type) -> State Env ()
 pushBinOp def = modify $ \env -> env { bin_ops = def : bin_ops env }
-
-pushUnOp :: (Name, Type) -> State Env ()
 pushUnOp def = modify $ \env -> env { un_ops = def : un_ops env }
+
+traitsTable :: Map.Map Trait [TCon]
+traitsTable = Map.fromList [ (Trait "Num", [TC "int", TC "double"])
+                           , (Trait "Eq",  [TC "int", TC "double", TC "void"])
+                           , (Trait "Ord", [TC "int", TC "double"]) ]
 
 class Infer a where
     infer :: a -> Inferred Type
@@ -121,14 +112,14 @@ instance Unify Type where
     unify _ _ = Nothing
 
 instance Infer P.Type where
-    infer P.IntType = return $ TCon TInt
-    infer P.FloatType = return $ TCon TFloat
-    infer P.VoidType = return $ TCon TVoid
+    infer P.IntType = return T.int
+    infer P.FloatType = return T.float
+    infer P.VoidType = return T.void
 
 instance Infer P.Literal where
-    infer (P.IntLiteral _) = return $ TCon TInt
-    infer (P.FloatLiteral _) = return $ TCon TFloat
-    infer P.VoidLiteral = return $ TCon TVoid
+    infer (P.IntLiteral _) = return T.int
+    infer (P.FloatLiteral _) = return T.float
+    infer P.VoidLiteral = return T.void
 
 instance Infer (P.Stmt P.Untyped) where
     infer (P.DefnStmt (P.Untyped defn)) = infer defn
@@ -150,7 +141,7 @@ instance Infer (P.OpDefn P.Untyped) where
         lift newScope
         tys <- sequence $ map (\(P.Untyped a) -> infer a) args
         expected <- infer ret_ty
-        let ty = TCon $ TFun [] tys expected
+        let ty = TFun Map.empty tys expected
         case arity of
             P.Binary -> lift $ pushBinOp (op, ty)
             P.Unary -> lift $ pushUnOp (op, ty)
@@ -180,7 +171,7 @@ instance Infer (P.FnDefn P.Untyped) where
         lift newScope
         tys <- sequence $ map (\(P.Untyped a) -> infer a) args
         expected <- infer ret_ty
-        let ty = TCon $ TFun [] tys expected
+        let ty = TFun Map.empty tys expected
         lift $ pushFnDef (name, ty)
         inferred <- infer body
         lift dropScope
@@ -316,36 +307,57 @@ instance Infer (P.Expr P.Untyped) where
     infer (P.Un (P.Untyped unExpr)) = infer unExpr
     infer (P.Bin (P.Untyped binExpr)) = infer binExpr
 
-apply' :: (Type, Type) -> ExceptT Error (State Scope) Type
-apply' (TVar n, expected@(TCon _)) = do
-    maybe_ty <- lift $ gets $ lookup n
-    maybe
-        (do { modify $ \scope -> (n, expected) : scope ; return expected })
-        (\got -> maybe
-            (throwE $ TypeErr $ TypeError { expected, got })
-            return
-            (got <-> expected))
-        maybe_ty
+-- TODO: Better document this function (or I won't be able to ever read it again).
+type Apply = ExceptT Error (State (Map.Map TVar (Either [Trait] TCon)))
+apply' :: (Type, Type) -> Apply Type
 apply' (got@(TCon _), expected@(TCon _)) =
     maybe
         (throwE $ TypeErr $ TypeError { expected, got })
         return
         (got <-> expected)
+apply' (TVar var@(TV name), expected@(TCon cty)) = do
+    maybe_ty <- lift $ gets $ Map.lookup var
+    maybe
+        (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
+        ret
+        maybe_ty
+    where
+        ret :: Either [Trait] TCon -> Apply Type
+        ret (Left traits) = do
+            sequence_ $ map (\trait -> maybe
+                 (throwE $ TraitNotInScopeErr $ TraitNotInScopeError { trait })
+                 (\types -> if notElem cty types
+                    then throwE $ NotImplTraitErr $ NotImplTraitError { ty = cty, trait }
+                    else return ())
+                 (Map.lookup trait traitsTable)) traits
+            lift $ modify $ Map.insert var $ Right cty
+            return expected
+        ret (Right got') = maybe
+            (throwE $ TypeErr $ TypeError { expected, got = TCon got' })
+            return
+            (TCon got' <-> expected)
+apply' _ = error "Unexpected type variable, really should never happen"
 
 -- Applies an argument list to a function, returning its result type if all types matches.
 -- Supports parametric polymorphism.
+-- TODO: Better document this function (or I won't be able to ever read it again).
 apply :: Type -> [Type] -> Either Error Type
-apply (TCon (TFun tvars t1s t2)) t3s | length t1s == length t3s = do
+apply (TFun tvars t1s t2) t3s | length t1s == length t3s = do
     let zipped = zip t1s t3s
-    (unified, scope) <- (\(out, state) -> do { out' <- out ; return (out', state) })
-        $ runState (runExceptT $ sequence $ map apply' zipped) []
+    (unified, scope) <- tvars
+        |> Map.map Left
+        |> runState (runExceptT $ sequence $ map apply' zipped)
+        |> \(out, state) -> do { out' <- out ; return (out', state) }
     case t2 of
-        TVar n -> maybe
-            (Left $ NotInScopeErr $ NotInScopeError { ident = n })
-            return
-            (lookup n scope)
+        TVar got@(TV name) -> maybe
+            (Left $ NotInScopeErr $ NotInScopeError { ident = name })
+            ret
+            (Map.lookup got scope)
         TCon _ -> return t2
-apply (TCon (TFun _ t1s _)) t3s =
+    where
+        ret (Left traits) = error "Not completely instantied function, should never happen"
+        ret (Right got) = return $ TCon got
+apply (TFun _ t1s _) t3s =
     Left $ ArgCountErr $ ArgCountError { expected = length t1s, got = length t3s }
 
 inferAST :: P.AST P.Untyped -> Either Error [Type]
@@ -361,19 +373,19 @@ inferAST ast =
 defaultEnv :: Env
 defaultEnv = Env {
     bin_ops = [
-        ( "+", TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a"))),
-        ( "-", TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a"))),
-        ( "*", TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a"))),
-        ( "/", TCon (TFun ["a"] [TVar "a", TVar "a"] (TVar "a"))),
-        ( "<", TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt))),
-        ( ">", TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt))),
-        ("==", TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt))),
-        ("!=", TCon (TFun ["a"] [TVar "a", TVar "a"] (TCon TInt))),
-        ( ":", TCon (TFun ["a", "b"] [TVar "a", TVar "b"] (TVar "b")))
+        ( "+", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
+        ( "-", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
+        ( "*", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
+        ( "/", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
+        ( "<", TFun (Map.fromList [(TV "T", [Trait "Ord"])]) [TVar $ TV "T", TVar $ TV "T"] T.int),
+        ( ">", TFun (Map.fromList [(TV "T", [Trait "Ord"])]) [TVar $ TV "T", TVar $ TV "T"] T.int),
+        ("==", TFun (Map.fromList [(TV "T", [Trait "Eq"])]) [TVar $ TV "T", TVar $ TV "T"] T.int),
+        ("!=", TFun (Map.fromList [(TV "T", [Trait "Eq"])]) [TVar $ TV "T", TVar $ TV "T"] T.int),
+        ( ":", TFun (Map.fromList [(TV "T", []), (TV "U", [])]) [TVar $ TV "T", TVar $ TV "U"] (TVar $ TV "U"))
     ],
     un_ops = [
-        ("!", TCon (TFun ["a"] [TVar "a"] (TCon TInt))),
-        ("-", TCon (TFun ["a"] [TVar "a"] (TVar "a")))
+        ("!", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T"] T.int),
+        ("-", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T"] (TVar $ TV "T"))
     ],
     fn_defs = [],
     vars = []

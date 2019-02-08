@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 2ab61000cbc122c67692a807a33ccd76c735c50cfa2c129c95f09db5c741bc2f
+-- hash: f07f4fc684f1860573a2b523aa9ee88cf850add94667758f038a55185f94b3d4
 
 name:           koak
 version:        0.1.0.0
@@ -26,12 +26,14 @@ executable koak
       Misc
       Parser.Lang
       Parser.Lib
+      Types
       Unifier
       Paths_koak
   hs-source-dirs:
       src
   build-depends:
       base >=4.7 && <5
+    , containers
     , llvm-hs-pretty
     , llvm-hs-pure >=7
     , mtl
