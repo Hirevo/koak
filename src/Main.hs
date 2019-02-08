@@ -1,55 +1,50 @@
 module Main where
 
-import System.Environment (getArgs)
 import System.Exit
 import Parser.Lib
 import Parser.Lang
 import Checker
 import Misc
-import LLVM.AST as AST
+import Control.Monad.State.Lazy
+import Control.Exception.Base
+
 import Codegen (fib)
-import qualified Data.Text.IO as TIO
+import System.Environment (getArgs)
 import Data.Text.Lazy (toStrict)
 import LLVM.Pretty (ppllvm)
-import Control.Monad.State.Lazy
 import Data.List (intersperse)
-import Prelude as P
-import Control.Exception.Base
+import System.IO (hPutStrLn, stderr)
+import System.IO.Error (ioeGetErrorString, userError, ioError, catchIOError)
+
+import qualified LLVM.AST as AST
+import qualified Data.Text.IO as TIO
 
 main :: IO ()
 -- main = fib
 --     |> ppllvm
 --     |> toStrict
 --     |> TIO.putStrLn
-main = do
-    [filename] <- getArgs
-    contents <- readFile filename
-    putStrLn "Built-in binary operators:"
-    putStrLn $ "  (+): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
-    putStrLn $ "  (-): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
-    putStrLn $ "  (*): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
-    putStrLn $ "  (/): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TFloat])
-    putStrLn $ "  (<): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
-    putStrLn $ "  (>): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
-    putStrLn $ "  (==): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
-    putStrLn $ "  (!=): " ++ show (TUni [TFun [TInt, TInt] TInt, TFun [TFloat, TFloat] TInt])
-    putStrLn $ "  (:): " ++ show (TUni [TFun [TUni [TInt, TFloat], TInt] TInt, TFun [TUni [TInt, TFloat], TFloat] TFloat])
-    putStrLn ""
-    putStrLn "Built-in unary operators:"
-    putStrLn $ "  (!): " ++ show (TUni [TFun [TInt] TInt, TFun [TFloat] TInt])
-    putStrLn $ "  (-): " ++ show (TUni [TFun [TInt] TInt, TFun [TFloat] TFloat])
-    putStrLn ""
-    case parse program contents of
-        Parsed (ast, _) -> do
-            case ast |> inferAST of
-                Left err -> P.putStrLn $ show err
-                Right types -> do
-                    putStrLn "Type-checked successfully !"
-                    putStrLn "Expression types:"
-                    putStrLn $ concat $ intersperse "\n" $ map show types
-            exitWith ExitSuccess
-        NotParsed err -> do
-            err |> show
-                |> putStrLn
-            exitWith $ ExitFailure 84
-    -- putStrLn $ show $ parse program contents
+main = flip catchIOError (\err -> do
+        hPutStrLn stderr $ "error: " ++ ioeGetErrorString err
+        exitWith (ExitFailure 84)) $ do
+    args <- getArgs
+    case args of
+        [arg] -> do
+            contents <- catchIOError (readFile arg) $ \_ -> ioError $ userError $ "No such source file: " ++ arg
+            putStrLn "Built-in binary operators:"
+            sequence_ $ map (\(name, ty) -> putStrLn ("(" ++ name ++ "): " ++ show ty)) (bin_ops defaultEnv)
+            putStrLn ""
+            putStrLn "Built-in unary operators:"
+            sequence_ $ map (\(name, ty) -> putStrLn ("(" ++ name ++ "): " ++ show ty)) (un_ops defaultEnv)
+            putStrLn ""
+            case parse program contents of
+                Parsed (ast, _) ->
+                    case ast |> inferAST of
+                        Left err -> fail $ show err
+                        Right types -> do
+                            putStrLn "Type-checked successfully !"
+                            putStrLn "Expression types:"
+                            putStrLn $ concat $ intersperse "\n" $ map show types
+                NotParsed err -> err |> show
+                                     |> fail
+        _ -> fail $ "Unexpected number of arguments: expected 1 but got " ++ show (length args)

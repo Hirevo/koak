@@ -331,9 +331,9 @@ inferAST :: P.AST P.Untyped -> Either Error [Type]
 inferAST ast = evalState (runExceptT $ sequence $ map (\(P.Untyped a) -> infer a) ast) defaultEnv
 
 -- TODO: AST annotation
-annotateAST :: P.AST P.Untyped -> Either Error (P.AST Typed)
-annotateAST elem =
-    let types = sequence $ map (\(P.Untyped a) -> infer a) ast -- ExceptT (State Env) [Type]
+-- annotateAST :: P.AST P.Untyped -> Either Error (P.AST Typed)
+-- annotateAST elem =
+--     let types = sequence $ map (\(P.Untyped a) -> infer a) ast -- ExceptT (State Env) [Type]
 
 defaultEnv :: Env
 defaultEnv = Env {
