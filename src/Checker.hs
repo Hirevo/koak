@@ -310,12 +310,12 @@ instance Infer (P.Expr P.Untyped) where
 -- TODO: Better document this function (or I won't be able to ever read it again).
 type Apply = ExceptT Error (State (Map.Map TVar (Either [Trait] TCon)))
 apply' :: (Type, Type) -> Apply Type
-apply' (got@(TCon _), expected@(TCon _)) =
+apply' (expected@(TCon _), got@(TCon _)) =
     maybe
         (throwE $ TypeErr $ TypeError { expected, got })
         return
         (got <-> expected)
-apply' (TVar var@(TV name), expected@(TCon cty)) = do
+apply' (TVar var@(TV name), got@(TCon cty)) = do
     maybe_ty <- lift $ gets $ Map.lookup var
     maybe
         (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
@@ -331,11 +331,11 @@ apply' (TVar var@(TV name), expected@(TCon cty)) = do
                     else return ())
                  (Map.lookup trait traitsTable)) traits
             lift $ modify $ Map.insert var $ Right cty
-            return expected
-        ret (Right got') = maybe
-            (throwE $ TypeErr $ TypeError { expected, got = TCon got' })
+            return got
+        ret (Right expected) = maybe
+            (throwE $ TypeErr $ TypeError { expected = TCon expected, got })
             return
-            (TCon got' <-> expected)
+            (TCon expected <-> got)
 apply' _ = error "Unexpected type variable, really should never happen"
 
 -- Applies an argument list to a function, returning its result type if all types matches.
