@@ -39,6 +39,8 @@ main = flip catchIOError (\err -> do
             putStrLn ""
             case parse program contents of
                 Parsed (ast, _) ->
+                    putStrLn "AST:" >>
+                    putStrLn (show ast) >>
                     case ast |> inferAST of
                         Left err -> fail $ show err
                         Right types -> do

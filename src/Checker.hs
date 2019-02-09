@@ -1,9 +1,10 @@
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleInstances #-}
 module Checker where
 
+import Annotation
+import Misc
 import Unifier
 import Misc
 import qualified Parser.Lang as P
@@ -71,10 +72,6 @@ instance Show TraitNotInScopeError where
     show TraitNotInScopeError { trait } =
         "TraitNotInScopeError: The trait '" ++ show trait ++ "' is not defined."
 
-data Typed a =
-    Typed Type a
-    deriving (Show, Eq, Functor)
-
 type Scope = [(Name, Type)]
 data Env = Env {
     bin_ops :: Scope,
@@ -121,25 +118,25 @@ instance Infer P.Literal where
     infer (P.FloatLiteral _) = return T.float
     infer P.VoidLiteral = return T.void
 
-instance Infer (P.Stmt P.Untyped) where
-    infer (P.DefnStmt (P.Untyped defn)) = infer defn
-    infer (P.ExprStmt (P.Untyped expr)) = infer expr
+instance Infer (P.Stmt ()) where
+    infer (P.DefnStmt (Ann _ defn)) = infer defn
+    infer (P.ExprStmt (Ann _ expr)) = infer expr
 
-instance Infer (P.Defn P.Untyped) where
-    infer (P.Op (P.Untyped defn)) = infer defn
-    infer (P.Fn (P.Untyped expr)) = infer expr
+instance Infer (P.Defn ()) where
+    infer (P.Op (Ann _ defn)) = infer defn
+    infer (P.Fn (Ann _ expr)) = infer expr
 
 -- TODO: Check if op already exists (in any scope ?).
-instance Infer (P.OpDefn P.Untyped) where
+instance Infer (P.OpDefn ()) where
     infer P.OpDefn {
         P.opdefn_op = op,
         P.opdefn_arity = arity,
         P.opdefn_args = args,
         P.opdefn_ret_ty = ret_ty,
-        P.opdefn_body = P.Untyped body
+        P.opdefn_body = Ann _ body
     } = do
         lift newScope
-        tys <- sequence $ map (\(P.Untyped a) -> infer a) args
+        tys <- sequence $ map (\(Ann _ a) -> infer a) args
         expected <- infer ret_ty
         let ty = TFun Map.empty tys expected
         case arity of
@@ -161,15 +158,15 @@ instance Infer P.Arg where
         return ty
 
 -- TODO: Check if fn already exists (in any scope ?).
-instance Infer (P.FnDefn P.Untyped) where
+instance Infer (P.FnDefn ()) where
     infer P.FnDefn {
         P.fndefn_name = name,
         P.fndefn_args = args,
         P.fndefn_ret_ty = ret_ty,
-        P.fndefn_body = P.Untyped body
+        P.fndefn_body = Ann _ body
     } = do
         lift newScope
-        tys <- sequence $ map (\(P.Untyped a) -> infer a) args
+        tys <- sequence $ map (\(Ann _ a) -> infer a) args
         expected <- infer ret_ty
         let ty = TFun Map.empty tys expected
         lift $ pushFnDef (name, ty)
@@ -182,12 +179,12 @@ instance Infer (P.FnDefn P.Untyped) where
                 got = inferred
             }
 
-instance Infer (P.ForExpr P.Untyped) where
+instance Infer (P.ForExpr ()) where
     infer P.ForExpr {
-        P.for_init = P.Untyped init,
-        P.for_cond = P.Untyped cond,
-        P.for_oper = P.Untyped oper,
-        P.for_body = P.Untyped body
+        P.for_init = Ann _ init,
+        P.for_cond = Ann _ cond,
+        P.for_oper = Ann _ oper,
+        P.for_body = Ann _ body
     } = do
         lift newScope
         tys <- sequence $ map infer [init, cond, oper]
@@ -195,17 +192,17 @@ instance Infer (P.ForExpr P.Untyped) where
         lift dropScope
         return ty
 
-instance Infer (P.IfExpr P.Untyped) where
+instance Infer (P.IfExpr ()) where
     infer P.IfExpr {
-        P.if_cond = P.Untyped cond,
-        P.if_then = P.Untyped body,
+        P.if_cond = Ann _ cond,
+        P.if_then = Ann _ body,
         P.if_else = else_block
     } = do
         lift newScope
         cond_ty <- infer cond
         then_ty <- infer body
         maybe (do { lift dropScope ; return then_ty })
-            (\(P.Untyped block) -> do
+            (\(Ann _ block) -> do
                 else_ty <- infer block
                 lift dropScope
                 if then_ty == else_ty
@@ -216,10 +213,10 @@ instance Infer (P.IfExpr P.Untyped) where
                     })
             else_block
 
-instance Infer (P.WhileExpr P.Untyped) where
+instance Infer (P.WhileExpr ()) where
     infer P.WhileExpr {
-        P.while_cond = (P.Untyped cond),
-        P.while_body = (P.Untyped body)
+        P.while_cond = (Ann _ cond),
+        P.while_body = (Ann _ body)
     } = do
         lift newScope
         cond_ty <- infer cond
@@ -227,7 +224,7 @@ instance Infer (P.WhileExpr P.Untyped) where
         lift dropScope
         return body_ty
 
-instance Infer (P.CallExpr P.Untyped) where
+instance Infer (P.CallExpr ()) where
     infer P.CallExpr {
         P.call_ident = name,
         P.call_args = args
@@ -239,28 +236,28 @@ instance Infer (P.CallExpr P.Untyped) where
                 (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
                 return
                 found
-        args_tys <- sequence $ map (\(P.Untyped a) -> infer a) args
+        args_tys <- sequence $ map (\(Ann _ a) -> infer a) args
         case apply fun_ty args_tys of
             Right ty -> return ty
             Left err -> throwE err
 
-instance Infer (P.BinExpr P.Untyped) where
+instance Infer (P.BinExpr ()) where
     -- TODO: Check if ${lhs} already exists (in current scope only).
     infer P.BinExpr {
         P.bin_op = "=",
-        P.bin_lhs = P.Untyped lhs,
-        P.bin_rhs = P.Untyped rhs
+        P.bin_lhs = Ann _ lhs,
+        P.bin_rhs = Ann _ rhs
     } = do
         ty <- infer rhs
         case lhs of
-            P.Ident (P.Untyped name) -> do
+            P.Ident (Ann _ name) -> do
                 lift $ pushVar (name, ty)
                 return ty
             _ -> throwE $ AssignErr AssignError
     infer P.BinExpr {
         P.bin_op = name,
-        P.bin_lhs = P.Untyped lhs,
-        P.bin_rhs = P.Untyped rhs
+        P.bin_lhs = Ann _ lhs,
+        P.bin_rhs = Ann _ rhs
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { bin_ops } ->
@@ -274,10 +271,10 @@ instance Infer (P.BinExpr P.Untyped) where
             Right ty -> return ty
             Left err -> throwE err
 
-instance Infer (P.UnExpr P.Untyped) where
+instance Infer (P.UnExpr ()) where
     infer P.UnExpr {
         P.un_op = name,
-        P.un_arg = P.Untyped arg
+        P.un_arg = Ann _ arg
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { un_ops } ->
@@ -291,21 +288,21 @@ instance Infer (P.UnExpr P.Untyped) where
             Right ty -> return ty
             Left err -> throwE err
 
-instance Infer (P.Expr P.Untyped) where
-    infer (P.For (P.Untyped forExpr)) = infer forExpr
-    infer (P.If (P.Untyped ifExpr)) = infer ifExpr
-    infer (P.While (P.Untyped whileExpr)) = infer whileExpr
-    infer (P.Ident (P.Untyped ident)) = do
+instance Infer (P.Expr ()) where
+    infer (P.For (Ann _ forExpr)) = infer forExpr
+    infer (P.If (Ann _ ifExpr)) = infer ifExpr
+    infer (P.While (Ann _ whileExpr)) = infer whileExpr
+    infer (P.Ident (Ann _ ident)) = do
         found <- lift $ gets $ \Env { bin_ops, un_ops, fn_defs, vars } ->
             foldl (<|>) Nothing $ fmap (lookup ident) (vars ++ [fn_defs, un_ops, bin_ops])
         maybe
             (throwE $ NotInScopeErr $ NotInScopeError { ident })
             return
             found
-    infer (P.Lit (P.Untyped literal)) = infer literal
-    infer (P.Call (P.Untyped callExpr)) = infer callExpr
-    infer (P.Un (P.Untyped unExpr)) = infer unExpr
-    infer (P.Bin (P.Untyped binExpr)) = infer binExpr
+    infer (P.Lit (Ann _ literal)) = infer literal
+    infer (P.Call (Ann _ callExpr)) = infer callExpr
+    infer (P.Un (Ann _ unExpr)) = infer unExpr
+    infer (P.Bin (Ann _ binExpr)) = infer binExpr
 
 -- TODO: Better document this function (or I won't be able to ever read it again).
 type Apply = ExceptT Error (State (Map.Map TVar (Either [Trait] TCon)))
@@ -360,15 +357,14 @@ apply (TFun tvars t1s t2) t3s | length t1s == length t3s = do
 apply (TFun _ t1s _) t3s =
     Left $ ArgCountErr $ ArgCountError { expected = length t1s, got = length t3s }
 
-inferAST :: P.AST P.Untyped -> Either Error [Type]
+inferAST :: P.AST () -> Either Error [Type]
 inferAST ast =
-    let inferred = sequence $ map (\(P.Untyped a) -> infer a) ast
+    let inferred = sequence $ map (\(Ann _ a) -> infer a) ast
     in evalState (runExceptT inferred) defaultEnv
 
 -- TODO: AST annotation
--- annotateAST :: P.AST P.Untyped -> Either Error (P.AST Typed)
--- annotateAST elem =
---     let types = sequence $ map (\(P.Untyped a) -> infer a) ast -- ExceptT (State Env) [Type]
+annotateAST :: P.AST () -> Either Error (P.AST Type)
+annotateAST elem = error "Not implemented"
 
 defaultEnv :: Env
 defaultEnv = Env {

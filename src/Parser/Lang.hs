@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor #-}
 module Parser.Lang where
 
 import Control.Applicative
@@ -6,6 +5,7 @@ import Parser.Lib
 import Data.Char (isSpace)
 import Data.List (sortBy)
 import Control.Monad.State.Lazy
+import Annotation
 import Misc
 import Debug.Trace
 
@@ -16,84 +16,88 @@ data PrecMap = PrecMap {
 
 type KoakParser = StateT PrecMap Parser
 
-newtype Untyped a = Untyped a deriving (Show, Eq, Functor)
-
 intoParser :: PrecMap -> KoakParser a -> Parser a
 intoParser = flip evalStateT
 
-type AST a = [a (Stmt a)]
+type AST a = [Ann a (Stmt a)]
 data Stmt a =
-    DefnStmt (a (Defn a))
-    | ExprStmt (a (Expr a))
+    DefnStmt (Ann a (Defn a))
+    | ExprStmt (Ann a (Expr a))
+    deriving (Show, Eq)
 data Type =
     IntType
     | FloatType
     | VoidType
+    deriving (Show, Eq)
 data Arg = Arg {
     arg_name :: String,
     arg_type :: Type
-}
+} deriving (Show, Eq)
 data Arity =
     Unary
     | Binary
+    deriving (Show, Eq)
 data Defn a =
-    Op (a (OpDefn a))
-    | Fn (a (FnDefn a))
+    Op (Ann a (OpDefn a))
+    | Fn (Ann a (FnDefn a))
+    deriving (Show, Eq)
 data OpDefn a = OpDefn {
     opdefn_op :: String,
     opdefn_prec :: Int,
     opdefn_arity :: Arity,
-    opdefn_args :: [a Arg],
+    opdefn_args :: [Ann a Arg],
     opdefn_ret_ty :: Type,
-    opdefn_body :: a (Expr a)
-}
+    opdefn_body :: Ann a (Expr a)
+} deriving (Show, Eq)
 data FnDefn a = FnDefn {
     fndefn_name :: String,
-    fndefn_args :: [a Arg],
+    fndefn_args :: [Ann a Arg],
     fndefn_ret_ty :: Type,
-    fndefn_body :: a (Expr a)
-}
+    fndefn_body :: Ann a (Expr a)
+} deriving (Show, Eq)
 data Expr a =
-    Call (a (CallExpr a))
-    | Bin (a (BinExpr a))
-    | Un (a (UnExpr a))
-    | Lit (a Literal)
-    | Ident (a String)
-    | For (a (ForExpr a))
-    | If (a (IfExpr a))
-    | While (a (WhileExpr a))
+    Call (Ann a (CallExpr a))
+    | Bin (Ann a (BinExpr a))
+    | Un (Ann a (UnExpr a))
+    | Lit (Ann a Literal)
+    | Ident (Ann a String)
+    | For (Ann a (ForExpr a))
+    | If (Ann a (IfExpr a))
+    | While (Ann a (WhileExpr a))
+    deriving (Show, Eq)
 data ForExpr a = ForExpr {
-    for_init :: a (Expr a),
-    for_cond :: a (Expr a),
-    for_oper :: a (Expr a),
-    for_body :: a (Expr a)
-}
+    for_init :: Ann a (Expr a),
+    for_cond :: Ann a (Expr a),
+    for_oper :: Ann a (Expr a),
+    for_body :: Ann a (Expr a)
+} deriving (Show, Eq)
 data IfExpr a = IfExpr {
-    if_cond :: a (Expr a),
-    if_then :: a (Expr a),
-    if_else :: Maybe (a (Expr a))
-}
+    if_cond :: Ann a (Expr a),
+    if_then :: Ann a (Expr a),
+    if_else :: Maybe (Ann a (Expr a))
+} deriving (Show, Eq)
 data WhileExpr a = WhileExpr {
-    while_cond :: a (Expr a),
-    while_body :: a (Expr a)
-}
+    while_cond :: Ann a (Expr a),
+    while_body :: Ann a (Expr a)
+} deriving (Show, Eq)
 data Literal =
     FloatLiteral Float
     | IntLiteral Int
     | VoidLiteral
+    deriving (Show, Eq)
 data CallExpr a = CallExpr {
     call_ident :: String,
-    call_args :: [a (Expr a)]
-}
+    call_args :: [Ann a (Expr a)]
+} deriving (Show, Eq)
 data BinExpr a = BinExpr {
     bin_op :: String,
-    bin_lhs :: a (Expr a),
-    bin_rhs :: a (Expr a)
-}
+    bin_lhs :: Ann a (Expr a),
+    bin_rhs :: Ann a (Expr a)
+} deriving (Show, Eq)
 data UnExpr a = UnExpr {
     un_op :: String,
-    un_arg :: a (Expr a)
-}
+    un_arg :: Ann a (Expr a)
+} deriving (Show, Eq)
 
 defaultPrecedenceMap :: PrecMap
 defaultPrecedenceMap = PrecMap {
@@ -191,14 +195,14 @@ spacing = some (satisfy isSpace <|> (pString "--" *> whileNot (pChar '\n') *> pC
 optSpacing :: Parser String
 optSpacing = many (satisfy isSpace <|> (pString "--" *> whileNot (pChar '\n') *> pChar '\n'))
 
-expressions :: KoakParser (Expr Untyped)
+expressions :: KoakParser (Expr ())
 expressions =
-    (For . Untyped <$> forExpression)
-    <|> (If . Untyped <$> ifExpr)
-    <|> (While . Untyped <$> whileExpr)
+    (For . Ann () <$> forExpression)
+    <|> (If . Ann () <$> ifExpr)
+    <|> (While . Ann () <$> whileExpr)
     <|> expression
 
-forExpression :: KoakParser (ForExpr Untyped)
+forExpression :: KoakParser (ForExpr ())
 forExpression = do
     lift $ optSpacing *> pString "for"
     lift spacing
@@ -213,13 +217,13 @@ forExpression = do
     lift optSpacing
     body <- expressions
     return $ ForExpr {
-        for_init = Untyped init,
-        for_cond = Untyped cond,
-        for_oper = Untyped oper,
-        for_body = Untyped body
+        for_init = Ann () init,
+        for_cond = Ann () cond,
+        for_oper = Ann () oper,
+        for_body = Ann () body
     }
 
-ifExpr :: KoakParser (IfExpr Untyped)
+ifExpr :: KoakParser (IfExpr ())
 ifExpr = do
     lift $ optSpacing *> pString "if"
     lift spacing
@@ -234,12 +238,12 @@ ifExpr = do
         spacing
         evalStateT expressions precMap
     return $ IfExpr {
-        if_cond = Untyped if_expr,
-        if_then = Untyped then_body,
-        if_else = Untyped <$> else_body
+        if_cond = Ann () if_expr,
+        if_then = Ann () then_body,
+        if_else = Ann () <$> else_body
     }
 
-whileExpr :: KoakParser (WhileExpr Untyped)
+whileExpr :: KoakParser (WhileExpr ())
 whileExpr = do
     lift $ optSpacing *> pString "while"
     lift spacing
@@ -248,11 +252,11 @@ whileExpr = do
     lift spacing
     body <- expressions
     return $ WhileExpr {
-        while_cond = Untyped while_expr,
-        while_body = Untyped body
+        while_cond = Ann () while_expr,
+        while_body = Ann () body
     }
 
-parseBinOp :: Expr Untyped -> Int -> KoakParser (Expr Untyped)
+parseBinOp :: Expr () -> Int -> KoakParser (Expr ())
 parseBinOp lhs minPrec = do
     s <- get
     let pBinOp = evalStateT binOp s
@@ -265,7 +269,11 @@ parseBinOp lhs minPrec = do
              (op, prec) <- pBinOp
              optSpacing
              rhs <- pUnary
-             let expr = Bin $ Untyped $ BinExpr { bin_op = op, bin_lhs = Untyped lhs, bin_rhs = Untyped rhs }
+             let expr = Bin $ Ann () $ BinExpr {
+                 bin_op = op,
+                 bin_lhs = Ann () lhs,
+                 bin_rhs = Ann () rhs
+             }
              let inner rhs' = fallback rhs' $ do
                   optSpacing
                   (_, prec') <- peek pBinOp
@@ -276,18 +284,22 @@ parseBinOp lhs minPrec = do
                      inner rhs
              lhs <- fallback expr $ do
                 rhs <- inner rhs
-                return $ Bin $ Untyped $ BinExpr { bin_op = op, bin_lhs = Untyped lhs, bin_rhs = Untyped rhs }
+                return $ Bin $ Ann () $ BinExpr {
+                    bin_op = op,
+                    bin_lhs = Ann () lhs,
+                    bin_rhs = Ann () rhs
+                }
              outer lhs minPrec
     lift $ outer lhs minPrec
 
-expression :: KoakParser (Expr Untyped)
+expression :: KoakParser (Expr ())
 expression = do
     precMap <- get
     lift optSpacing
     lhs <- unary
     parseBinOp lhs 0
 
-unary :: KoakParser (Expr Untyped)
+unary :: KoakParser (Expr ())
 unary = do
     precMap <- get
     lift optSpacing
@@ -295,18 +307,18 @@ unary = do
          operator <- lift $ choice $ map (pString . fst) $ un_prec precMap
          lift optSpacing
          operand <- unary
-         return $ Un $ Untyped $ UnExpr {
+         return $ Un $ Ann () $ UnExpr {
              un_op = operator,
-             un_arg = Untyped operand
+             un_arg = Ann () operand
          }
     p1 <|> postfix
 
-postfix :: KoakParser (Expr Untyped)
+postfix :: KoakParser (Expr ())
 postfix = do
     precMap <- get
     lift optSpacing
-    let ident = lift $ Ident . Untyped <$> identifier
-    let lit = lift $ Lit . Untyped <$> literal
+    let ident = lift $ Ident . Ann () <$> identifier
+    let lit = lift $ Lit . Ann () <$> literal
     let paren = do
          lift $ pChar '('
          lift optSpacing
@@ -325,9 +337,9 @@ postfix = do
             lift optSpacing
             lift $ pChar ')'
             return args
-         return $ Call $ Untyped $ CallExpr {
+         return $ Call $ Ann () $ CallExpr {
              call_ident = name,
-             call_args = Untyped <$> args
+             call_args = Ann () <$> args
          }
     callExpr <|> primary
 
@@ -341,7 +353,7 @@ argument = do
         arg_type = ty
     }
 
-defnUnaryStatment :: KoakParser (OpDefn Untyped)
+defnUnaryStatment :: KoakParser (OpDefn ())
 defnUnaryStatment = do
     lift $ optSpacing *> pString "def"
     lift $ spacing *> pString "unary"
@@ -365,12 +377,12 @@ defnUnaryStatment = do
         opdefn_op = name,
         opdefn_prec = prec,
         opdefn_arity = Unary,
-        opdefn_args = [Untyped arg],
+        opdefn_args = [Ann () arg],
         opdefn_ret_ty = ret_ty,
-        opdefn_body = Untyped exprs
+        opdefn_body = Ann () exprs
     }
 
-defnBinaryStatment :: KoakParser (OpDefn Untyped)
+defnBinaryStatment :: KoakParser (OpDefn ())
 defnBinaryStatment = do
     lift $ optSpacing *> pString "def"
     lift $ spacing *> pString "binary"
@@ -394,12 +406,12 @@ defnBinaryStatment = do
         opdefn_op = name,
         opdefn_prec = prec,
         opdefn_arity = Binary,
-        opdefn_args = [Untyped arg1, Untyped arg2],
+        opdefn_args = [Ann () arg1, Ann () arg2],
         opdefn_ret_ty = ret_ty,
-        opdefn_body = Untyped exprs
+        opdefn_body = Ann () exprs
     }
 
-defnFuncStatment :: KoakParser (FnDefn Untyped)
+defnFuncStatment :: KoakParser (FnDefn ())
 defnFuncStatment = do
     lift $ optSpacing *> pString "def"
     name <- lift $ optSpacing *> identifier
@@ -414,42 +426,42 @@ defnFuncStatment = do
     lift $ optSpacing *> pChar ';'
     return $ FnDefn {
         fndefn_name = name,
-        fndefn_args = Untyped <$> args,
+        fndefn_args = Ann () <$> args,
         fndefn_ret_ty = ret_ty,
-        fndefn_body = Untyped exprs
+        fndefn_body = Ann () exprs
     }
 
-defnStatement :: KoakParser (Defn Untyped)
+defnStatement :: KoakParser (Defn ())
 defnStatement =
-    (Op . Untyped <$> defnUnaryStatment)
-    <|> (Op . Untyped <$> defnBinaryStatment)
-    <|> (Fn . Untyped <$> defnFuncStatment)
+    (Op . Ann () <$> defnUnaryStatment)
+    <|> (Op . Ann () <$> defnBinaryStatment)
+    <|> (Fn . Ann () <$> defnFuncStatment)
 
-exprStatement :: KoakParser (Expr Untyped)
+exprStatement :: KoakParser (Expr ())
 exprStatement = do
     lift optSpacing
     expr <- expressions
     lift $ optSpacing *> pChar ';'
     return expr
 
-statement :: KoakParser (Stmt Untyped)
+statement :: KoakParser (Stmt ())
 statement =
-    (DefnStmt . Untyped <$> defnStatement)
-    <|> (ExprStmt . Untyped <$> exprStatement)
+    (DefnStmt . Ann () <$> defnStatement)
+    <|> (ExprStmt . Ann () <$> exprStatement)
 
-statements :: KoakParser (AST Untyped)
+statements :: KoakParser (AST ())
 statements = do
     lift optSpacing
-    stmt <- Untyped <$> statement
+    stmt <- Ann () <$> statement
     s <- get
     lift $ fallback [stmt] $ do
         stmts <- evalStateT statements s
         return (stmt : stmts)
 
-program :: Parser (AST Untyped)
+program :: Parser (AST ())
 program = evalStateT allStatements defaultPrecedenceMap
     where
-        allStatements :: KoakParser (AST Untyped)
+        allStatements :: KoakParser (AST ())
         allStatements = do
             stmts <- statements
             lift $ optSpacing *> pEnd
