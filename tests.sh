@@ -24,7 +24,7 @@ test() {
 
 test 'IfExpr' \
      'if i == 2 then 3 + 2 else -1;' \
-     '[Ann () (ExprStmt (Ann () (If (Ann () (IfExpr {if_cond = Ann () (Bin (Ann () (BinExpr {bin_op = "==", bin_lhs = Ann () (Ident (Ann () "i")), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), if_then = Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Lit (Ann () (IntLiteral 3))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), if_else = Just (Ann () (Un (Ann () (UnExpr {un_op = "-", un_arg = Ann () (Lit (Ann () (IntLiteral 1)))}))))})))))]';
+     '[Ann () (ExprStmt (Ann () (If (Ann () (IfExpr {if_cond = Ann () (Bin (Ann () (BinExpr {bin_op = "==", bin_lhs = Ann () (Ident (Ann () "i")), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), if_then = Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Lit (Ann () (IntLiteral 3))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), if_else = Just (Ann () (Un (Ann () (UnExpr {un_op = "-", un_rhs = Ann () (Lit (Ann () (IntLiteral 1)))}))))})))))]';
 
 test 'ForExpr' \
      'for i = 2, i < 4, i = i + 1 in fib(i, 3 + 2);' \
@@ -40,7 +40,7 @@ test 'Precedence 2' \
 
 test 'Precedence 3' \
      '3 * -2 + 3;' \
-     '[Ann () (ExprStmt (Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Bin (Ann () (BinExpr {bin_op = "*", bin_lhs = Ann () (Lit (Ann () (IntLiteral 3))), bin_rhs = Ann () (Un (Ann () (UnExpr {un_op = "-", un_arg = Ann () (Lit (Ann () (IntLiteral 2)))})))}))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 3)))})))))]';
+     '[Ann () (ExprStmt (Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Bin (Ann () (BinExpr {bin_op = "*", bin_lhs = Ann () (Lit (Ann () (IntLiteral 3))), bin_rhs = Ann () (Un (Ann () (UnExpr {un_op = "-", un_rhs = Ann () (Lit (Ann () (IntLiteral 2)))})))}))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 3)))})))))]';
 
 test 'Precedence 4' \
      '1 + 2 * 3;' \

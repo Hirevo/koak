@@ -3,7 +3,9 @@ module Main where
 import System.Exit
 import Parser.Lib
 import Parser.Lang
-import Checker
+import Inference
+import Annotation
+import AnnotationImpl
 import Misc
 import Control.Monad.State.Lazy
 import Control.Exception.Base
@@ -39,13 +41,18 @@ main = flip catchIOError (\err -> do
             putStrLn ""
             case parse program contents of
                 Parsed (ast, _) ->
+                    putStrLn "Source code:" >>
+                    putStrLn contents >>
+                    putStrLn "" >>
                     putStrLn "AST:" >>
                     putStrLn (show ast) >>
-                    case ast |> inferAST of
+                    putStrLn "" >>
+                    case ast |> annotateAST of
                         Left err -> fail $ show err
                         Right types -> do
                             putStrLn "Type-checked successfully !"
                             putStrLn "Expression types:"
-                            putStrLn $ concat $ intersperse "\n" $ map show types
-                NotParsed pos err -> fail $ "ParseError (at " ++ show pos ++ "): " ++ show err
+                            putStrLn $ concat $ intersperse "\n" $ map (show . annotation) types
+                NotParsed err -> err |> show
+                                     |> fail
         _ -> fail $ "Unexpected number of arguments: expected 1 but got " ++ show (length args)

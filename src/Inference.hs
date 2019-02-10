@@ -1,7 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleInstances #-}
-module Checker where
+module Inference where
 
 import Annotation
 import Misc
@@ -11,6 +11,7 @@ import qualified Parser.Lang as P
 import Types as T
 import Control.Monad.State.Lazy
 import Control.Monad.Trans.Except
+import Control.Monad.Except
 import Control.Applicative
 import Data.List (find, findIndex, intersperse)
 import Data.Maybe (isJust, isNothing, fromJust, fromMaybe)
@@ -274,7 +275,7 @@ instance Infer (P.BinExpr ()) where
 instance Infer (P.UnExpr ()) where
     infer P.UnExpr {
         P.un_op = name,
-        P.un_arg = Ann _ arg
+        P.un_rhs = Ann _ arg
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { un_ops } ->
@@ -358,13 +359,11 @@ apply (TFun _ t1s _) t3s =
     Left $ ArgCountErr $ ArgCountError { expected = length t1s, got = length t3s }
 
 inferAST :: P.AST () -> Either Error [Type]
-inferAST ast =
-    let inferred = sequence $ map (\(Ann _ a) -> infer a) ast
-    in evalState (runExceptT inferred) defaultEnv
-
--- TODO: AST annotation
-annotateAST :: P.AST () -> Either Error (P.AST Type)
-annotateAST elem = error "Not implemented"
+inferAST stmts =
+    stmts |> map (\(Ann _ a) -> infer a)
+          |> sequence
+          |> runExceptT
+          |> flip evalState defaultEnv
 
 defaultEnv :: Env
 defaultEnv = Env {

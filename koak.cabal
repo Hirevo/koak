@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 294d903481f60f15edede3dce767e5e17310faec1089452d3d725367ab1d0bca
+-- hash: 0edf461c84bde3e70a6118dd2b26c7df2bf4d1c5f71094679b4f6bcf11b7f1f0
 
 name:           koak
 version:        0.1.0.0
@@ -22,8 +22,9 @@ executable koak
   main-is: Main.hs
   other-modules:
       Annotation
-      Checker
+      AnnotationImpl
       Codegen
+      Inference
       Misc
       Parser.Lang
       Parser.Lib

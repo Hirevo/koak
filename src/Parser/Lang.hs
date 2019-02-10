@@ -96,7 +96,7 @@ data BinExpr a = BinExpr {
 } deriving (Show, Eq)
 data UnExpr a = UnExpr {
     un_op :: String,
-    un_arg :: Ann a (Expr a)
+    un_rhs :: Ann a (Expr a)
 } deriving (Show, Eq)
 
 defaultPrecedenceMap :: PrecMap
@@ -309,7 +309,7 @@ unary = do
          operand <- unary
          return $ Un $ Ann () $ UnExpr {
              un_op = operator,
-             un_arg = Ann () operand
+             un_rhs = Ann () operand
          }
     p1 <|> postfix
 
