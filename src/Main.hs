@@ -45,6 +45,5 @@ main = flip catchIOError (\err -> do
                             putStrLn "Type-checked successfully !"
                             putStrLn "Expression types:"
                             putStrLn $ concat $ intersperse "\n" $ map show types
-                NotParsed err -> err |> show
-                                     |> fail
+                NotParsed pos err -> fail $ "ParseError (at " ++ show pos ++ "): " ++ show err
         _ -> fail $ "Unexpected number of arguments: expected 1 but got " ++ show (length args)

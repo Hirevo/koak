@@ -9,14 +9,16 @@ data ParseError =
     NotMatched
     | EndOfInput
     deriving (Eq)
-data ParseResult a =
-    Parsed a
-    | NotParsed Pos ParseError
-    deriving (Show, Eq)
-
 instance Show ParseError where
     show NotMatched = "Invalid expression"
     show EndOfInput = "Unexpected end of input"
+data ParseResult a =
+    Parsed a
+    | NotParsed Pos ParseError
+    deriving (Eq)
+instance Show a => Show (ParseResult a) where
+    show (Parsed a) = show a
+    show (NotParsed pos err) = "ParseError (at " ++ show pos ++ "): " ++ show err
 
 instance Functor ParseResult where
     fmap _ (NotParsed pos err) = NotParsed pos err
@@ -56,8 +58,11 @@ updatePos _ pos = pos { column = column pos + 1 }
 newtype Parser a = Parser
     ((String, Pos) -> ParseResult (a, (String, Pos)))
 
-parse :: String -> Parser a -> ParseResult (a, (String, Pos))
-parse input (Parser f) = f (input, Pos{ line = 1, column = 0 })
+parse :: Parser a -> String -> ParseResult (a, (String, Pos))
+parse (Parser f) input = f (input, Pos{ line = 1, column = 0 })
+
+parseFrom :: Parser a -> (String, Pos) -> ParseResult (a, (String, Pos))
+parseFrom (Parser f) = f
 
 instance Functor Parser where
     fmap f (Parser p) = Parser $ \str -> do
@@ -67,7 +72,7 @@ instance Functor Parser where
 instance Applicative Parser where
     pure a = Parser $ \str -> Parsed (a, str)
     Parser p1 <*> p2 = Parser $ \str -> do
-        (f, str') <- p1 str
+        (f, (str', pos)) <- p1 str
         parse (f <$> p2) str'
 
 instance Alternative Parser where
@@ -77,7 +82,7 @@ instance Alternative Parser where
 instance Monad Parser where
     Parser a >>= f = Parser $ \str -> do
         (ret, str') <- a str
-        parse (f ret) str'
+        parseFrom (f ret) str'
 
 instance MonadPlus Parser where
     mzero = empty
@@ -97,16 +102,16 @@ withRange p = do
 -- It takes any parser and returns the same one but made non-consuming.
 peek :: Parser a -> Parser a
 peek p = Parser $ \str -> do
-    (a, _) <- parse p str
+    (a, _) <- parseFrom p str
     return (a, str)
 
 whileNot :: Parser a -> Parser String
 whileNot p = Parser $ \str ->
-    case parse (peek p) str of
+    case parseFrom (peek p) str of
         Parsed (_, rest) -> Parsed ([], rest)
         NotParsed _ NotMatched ->
             let recur = ((:) <$> pAny <*> whileNot p)
-            in parse recur str
+            in parseFrom recur str
         NotParsed pos EndOfInput -> NotParsed pos EndOfInput
 
 satisfy :: (Char -> Bool) -> Parser Char
