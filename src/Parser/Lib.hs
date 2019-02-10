@@ -12,6 +12,7 @@ data ParseError =
 instance Show ParseError where
     show NotMatched = "Invalid expression"
     show EndOfInput = "Unexpected end of input"
+
 data ParseResult a =
     Parsed a
     | NotParsed Pos ParseError
@@ -35,23 +36,26 @@ instance Alternative ParseResult where
     _        <|> b = b
 
 instance Monad ParseResult where
+    return = pure
     NotParsed pos err >>= _ = NotParsed pos err
     Parsed x          >>= f = f x
 
 data Pos = Pos {
-    line :: Int,
-    column :: Int
+    line :: !Int,
+    column :: !Int
 } deriving (Eq, Ord)
 instance Show Pos where
     show Pos{ line, column } = show line ++ ":" ++ show column
 
 data Range = Range {
-    start :: Pos,
-    end :: Pos
-} deriving (Show, Eq, Ord)
+    start :: !Pos,
+    end :: !Pos
+} deriving (Eq, Ord)
+instance Show Range where
+    show Range{ start, end } = show start ++ "-" ++ show end
 
 updatePos :: Char -> Pos -> Pos
-updatePos '\n' pos = pos { line = line pos + 1, column = 0 }
+updatePos '\n' pos = pos { line = line pos + 1, column = 1 }
 updatePos '\t' pos = pos { column = column pos + 8 - ((column pos - 1) `mod` 8) }
 updatePos _ pos = pos { column = column pos + 1 }
 
@@ -59,7 +63,7 @@ newtype Parser a = Parser
     ((String, Pos) -> ParseResult (a, (String, Pos)))
 
 parse :: Parser a -> String -> ParseResult (a, (String, Pos))
-parse (Parser f) input = f (input, Pos{ line = 1, column = 0 })
+parse (Parser f) input = f (input, Pos{ line = 1, column = 1 })
 
 parseFrom :: Parser a -> (String, Pos) -> ParseResult (a, (String, Pos))
 parseFrom (Parser f) = f
@@ -72,21 +76,22 @@ instance Functor Parser where
 instance Applicative Parser where
     pure a = Parser $ \str -> Parsed (a, str)
     Parser p1 <*> p2 = Parser $ \str -> do
-        (f, (str', pos)) <- p1 str
-        parse (f <$> p2) str'
+        (f, str') <- p1 str
+        parseFrom (f <$> p2) str'
 
 instance Alternative Parser where
-    empty                 = Parser $ \_ -> empty
-    Parser a <|> Parser b = Parser $ \str -> a str <|> b str
+    empty = mzero
+    (<|>) = mplus
 
 instance Monad Parser where
+    return = pure
     Parser a >>= f = Parser $ \str -> do
         (ret, str') <- a str
         parseFrom (f ret) str'
 
 instance MonadPlus Parser where
-    mzero = empty
-    mplus = (<|>)
+    mzero = Parser $ \(_, pos) -> NotParsed pos NotMatched
+    mplus (Parser a) (Parser b) = Parser $ \str -> a str <|> b str
 
 currentPos :: Parser Pos
 currentPos = Parser $ \(str, pos) -> Parsed (pos, (str, pos))
