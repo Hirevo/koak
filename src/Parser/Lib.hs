@@ -53,9 +53,11 @@ updatePos '\n' pos = pos { line = line pos + 1, column = 0 }
 updatePos '\t' pos = pos { column = column pos + 8 - ((column pos - 1) `mod` 8) }
 updatePos _ pos = pos { column = column pos + 1 }
 
-newtype Parser a = Parser {
-    parse :: (String, Pos) -> ParseResult (a, (String, Pos))
-}
+newtype Parser a = Parser
+    ((String, Pos) -> ParseResult (a, (String, Pos)))
+
+parse :: String -> Parser a -> ParseResult (a, (String, Pos))
+parse input (Parser f) = f (input, Pos{ line = 1, column = 0 })
 
 instance Functor Parser where
     fmap f (Parser p) = Parser $ \str -> do
