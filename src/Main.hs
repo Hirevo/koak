@@ -1,16 +1,17 @@
 module Main where
 
-import System.Exit
+import Annotation
+import Misc
+import Types
 import Parser.Lib
 import Parser.Lang
-import Inference
-import Annotation
-import AnnotationImpl
-import Misc
+import Passes.Annotation
+import Passes.Inference
 import Control.Monad.State.Lazy
 import Control.Exception.Base
+import System.Exit
 
-import Codegen (fib)
+import Codegen.Codegen (fib)
 import System.Environment (getArgs)
 import Data.Text.Lazy (toStrict)
 import LLVM.Pretty (ppllvm)
@@ -18,7 +19,7 @@ import Data.List (intersperse)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Error (ioeGetErrorString, userError, ioError, catchIOError)
 
-import qualified LLVM.AST as AST
+import qualified Data.Map as Map
 import qualified Data.Text.IO as TIO
 
 main :: IO ()
@@ -32,27 +33,31 @@ main = flip catchIOError (\err -> do
     args <- getArgs
     case args of
         [arg] -> do
-            contents <- catchIOError (readFile arg) $ \_ -> ioError $ userError $ "No such source file: " ++ arg
             putStrLn "Built-in binary operators:"
-            sequence_ $ map (\(name, ty) -> putStrLn ("(" ++ name ++ "): " ++ show ty)) (bin_ops defaultEnv)
+            builtinBinaryOps |> Map.toList
+                             |> map (\(name, ty) -> putStrLn ("(" ++ name ++ "): " ++ show ty))
+                             |> sequence_
             putStrLn ""
             putStrLn "Built-in unary operators:"
-            sequence_ $ map (\(name, ty) -> putStrLn ("(" ++ name ++ "): " ++ show ty)) (un_ops defaultEnv)
+            builtinUnaryOps |> Map.toList
+                            |> map (\(name, ty) -> putStrLn ("(" ++ name ++ "): " ++ show ty))
+                            |> sequence_
             putStrLn ""
-            case parse program contents of
-                Parsed (ast, _) ->
-                    putStrLn "Source code:" >>
-                    putStrLn contents >>
-                    putStrLn "" >>
-                    putStrLn "AST:" >>
-                    putStrLn (show ast) >>
-                    putStrLn "" >>
+            parseResult <- arg |> parseFile program
+                               |> flip catchIOError (\_ -> ioError $ userError $ "No such source file: " ++ arg)
+            case parseResult of
+                Parsed (ast, _) -> do
+                    -- putStrLn "AST:"
+                    -- putStrLn (show ast)
+                    -- putStrLn ""
                     case ast |> annotateAST of
-                        Left err -> fail $ show err
+                        Left err -> err |> show |> fail
                         Right types -> do
                             putStrLn "Type-checked successfully !"
                             putStrLn "Expression types:"
-                            putStrLn $ concat $ intersperse "\n" $ map (show . annotation) types
-                NotParsed err -> err |> show
-                                     |> fail
+                            types |> map (show . annotation)
+                                  |> intersperse "\n"
+                                  |> concat
+                                  |> putStrLn
+                err -> err |> show |> fail
         _ -> fail $ "Unexpected number of arguments: expected 1 but got " ++ show (length args)

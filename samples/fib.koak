@@ -4,16 +4,13 @@ def fib(n: int): int
         then fib(n - 1) + fib(n - 2)
         else 1;
 
-def unary ! 10 (n: int): int
-    if n then 0 else 1;
-
 def binary ^ 60 (x: int, y: int): int
     for i = 0, i < y, y = y + 1
         in x = x * x;
 
-def binary ^' 60 (x: double, y: int): double
+def binary ^ 60 (x: double, y: int): double
     for i = 0, i < y, y = y + 1
-        in x = x * x; 
+        in x = x * x;
 
 fib(10 ^ !4);
-10.2 ^' 4;
+10.2 ^ 4;

@@ -1,38 +1,70 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleInstances #-}
-module AnnotationImpl where
+module Passes.Annotation where
 
-import Inference
-import Misc
 import Annotation
-import qualified Parser.Lang as P
-import Control.Monad.Trans.Except
-import Control.Monad.State
-import Control.Monad.Except
+import Errors
+import Misc
 import Control.Applicative
+import Control.Monad.Except
+import Control.Monad.State
+import Control.Monad.Trans.Except
+
+import Types as T
+
+import qualified Data.Map as Map
+import qualified Parser.Lang as P
+
+type Scope = Map.Map Name Type
+data Env = Env {
+    bin_ops :: Scope,
+    un_ops :: Scope,
+    fn_defs :: Scope,
+    vars :: [Scope]
+} deriving (Show, Eq)
+type Annotated = ExceptT Error (State Env)
+
+newScope, dropScope :: State Env ()
+newScope = modify $ \env -> env { vars = Map.empty : vars env }
+dropScope = modify $ \env -> env { vars = tail $ vars env }
+
+pushFnDef, pushBinOp, pushUnOp, pushVar :: Name -> Type -> State Env ()
+pushFnDef name ty = modify $ \env -> env { fn_defs = Map.insert name ty $ fn_defs env }
+pushBinOp name ty = modify $ \env -> env { bin_ops = Map.insert name ty $ bin_ops env }
+pushUnOp name ty = modify $ \env -> env { un_ops = Map.insert name ty $ un_ops env }
+pushVar name ty = modify $ \env ->
+    if null $ vars env
+        then env { vars = [Map.singleton name ty] }
+        else env { vars = Map.insert name ty (head $ vars env) : tail (vars env) }
+
+getFnDef, getBinOp, getUnOp, getVar :: Name -> State Env (Maybe Type)
+getFnDef name = gets $ \env -> env |> fn_defs |> Map.lookup name
+getBinOp name = gets $ \env -> env |> bin_ops |> Map.lookup name
+getUnOp name = gets $ \env -> env |> un_ops |> Map.lookup name
+getVar name = gets $ \env -> env |> vars |> map (Map.lookup name) |> foldl1 (<|>)
 
 class Annotate a where
-    annotate :: a -> Inferred (Ann Type a)
+    annotate :: a -> Annotated (Ann Type a)
 
 class Annotate1 a where
-    annotate1 :: a () -> Inferred (Ann Type (a Type))
+    annotate1 :: a b -> Annotated (Ann Type (a Type))
 
 instance Annotate P.Type where
-    annotate a@P.IntType = return $ Ann TInt a
-    annotate a@P.FloatType = return $ Ann TFloat a
-    annotate a@P.VoidType = return $ Ann TVoid a
+    annotate a@P.IntType = return $ Ann T.int a
+    annotate a@P.FloatType = return $ Ann T.float a
+    annotate a@P.VoidType = return $ Ann T.void a
 
 instance Annotate P.Literal where
-    annotate a@(P.IntLiteral _) = return $ Ann TInt a
-    annotate a@(P.FloatLiteral _) = return $ Ann TFloat a
-    annotate a@P.VoidLiteral = return $ Ann TVoid a
+    annotate a@(P.IntLiteral _) = return $ Ann T.int a
+    annotate a@(P.FloatLiteral _) = return $ Ann T.float a
+    annotate a@P.VoidLiteral = return $ Ann T.void a
 
 instance Annotate P.Arg where
     annotate arg@P.Arg{ P.arg_name = name, P.arg_type = arg_ty } = do
         annotated_arg <- annotate arg_ty
         let ty = annotation annotated_arg
-        lift $ pushVar (name, ty)
+        lift $ pushVar name ty
         return $ Ann ty arg
 
 instance Annotate1 P.Stmt where
@@ -55,7 +87,6 @@ instance Annotate1 P.Defn where
         let ty = annotation annotated_defn
         return $ Ann ty $ P.Fn annotated_defn
 
--- TODO: Check if op already exists (in any scope ?).
 instance Annotate1 P.OpDefn where
     annotate1 defn@P.OpDefn {
         P.opdefn_op = op,
@@ -67,11 +98,25 @@ instance Annotate1 P.OpDefn where
         lift newScope
         annotated_args <- sequence $ map (\(Ann _ a) -> annotate a) args
         let tys = map annotation annotated_args
-        expected <- infer ret_ty
-        let ty = TFun tys expected
+        Ann expected _ <- annotate ret_ty
+        let ty = TFun Map.empty tys expected
         case arity of
-            P.Binary -> lift $ pushBinOp (op, ty)
-            P.Unary -> lift $ pushUnOp (op, ty)
+            P.Binary -> do
+                maybe_op <- lift $ getBinOp op
+                case maybe_op of
+                    Just ty2 -> throwE $ MultipleDefnErr $ MultipleDefnError {
+                        name = op,
+                        definitions = [ty2, ty]
+                    }
+                    Nothing -> lift $ pushBinOp op ty
+            P.Unary -> do
+                maybe_op <- lift $ getUnOp op
+                case maybe_op of
+                    Just ty2 -> throwE $ MultipleDefnErr $ MultipleDefnError {
+                        name = op,
+                        definitions = [ty2, ty]
+                    }
+                    Nothing -> lift $ pushBinOp op ty
         annotated_body <- annotate1 body
         let inferred = annotation annotated_body
         lift dropScope
@@ -85,7 +130,6 @@ instance Annotate1 P.OpDefn where
                 got = inferred
             }
 
--- TODO: Check if fn already exists (in any scope ?).
 instance Annotate1 P.FnDefn where
     annotate1 defn@P.FnDefn {
         P.fndefn_name = name,
@@ -96,9 +140,14 @@ instance Annotate1 P.FnDefn where
         lift newScope
         annotated_args <- sequence $ map (\(Ann _ a) -> annotate a) args
         let tys = map annotation annotated_args
-        expected <- infer ret_ty
-        let ty = TFun tys expected
-        lift $ pushFnDef (name, ty)
+        Ann expected _ <- annotate ret_ty
+        let ty = TFun Map.empty tys expected
+        maybe_fn <- lift $ getFnDef name
+        case maybe_fn of
+            Just ty2 -> throwE $ MultipleDefnErr $ MultipleDefnError {
+                name, definitions = [ty2, ty]
+            }
+            Nothing -> lift $ pushFnDef name ty
         annotated_body <- annotate1 body
         let inferred = annotation annotated_body
         lift dropScope
@@ -186,7 +235,7 @@ instance Annotate1 P.CallExpr where
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { fn_defs } ->
-                lookup name fn_defs
+                Map.lookup name fn_defs
             maybe
                 (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
                 return
@@ -211,7 +260,7 @@ instance Annotate1 P.BinExpr where
         let ty = annotation annotated_rhs
         case lhs of
             P.Ident (Ann _ name) -> do
-                lift $ pushVar (name, ty)
+                lift $ pushVar name ty
                 return $ Ann ty $ P.BinExpr {
                     P.bin_op = "=",
                     P.bin_lhs = Ann ty $ P.Ident $ Ann ty name,
@@ -225,7 +274,7 @@ instance Annotate1 P.BinExpr where
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { bin_ops } ->
-                lookup name bin_ops
+                Map.lookup name bin_ops
             maybe
                 (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
                 return
@@ -247,7 +296,7 @@ instance Annotate1 P.UnExpr where
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { un_ops } ->
-                lookup name un_ops
+                Map.lookup name un_ops
             maybe
                 (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
                 return
@@ -276,7 +325,7 @@ instance Annotate1 P.Expr where
         return $ Ann ty $ P.While annotated_while
     annotate1 (P.Ident (Ann _ ident)) = do
         found <- lift $ gets $ \Env { bin_ops, un_ops, fn_defs, vars } ->
-            foldl (<|>) Nothing $ fmap (lookup ident) (vars ++ [fn_defs, un_ops, bin_ops])
+            foldl (<|>) Nothing $ fmap (Map.lookup ident) (vars ++ [fn_defs, un_ops, bin_ops])
         maybe
             (throwE $ NotInScopeErr $ NotInScopeError { ident })
             (\ty -> return $ Ann ty $ P.Ident $ Ann ty ident)
@@ -298,9 +347,68 @@ instance Annotate1 P.Expr where
         let ty = annotation annotated_binexpr
         return $ Ann ty $ P.Bin annotated_binexpr
 
-annotateAST :: P.AST () -> Either Error (P.AST Type)
+-- TODO: Better document this function (or I won't be able to ever read it again).
+type Apply = ExceptT Error (State (Map.Map TVar (Either [Trait] TCon)))
+apply' :: (Type, Type) -> Apply Type
+apply' (expected@(TCon _), got@(TCon _)) =
+    if got == expected
+        then return got
+        else throwE $ TypeErr $ TypeError { expected, got }
+apply' (TVar var@(TV name), got@(TCon cty)) = do
+    maybe_ty <- lift $ gets $ Map.lookup var
+    maybe
+        (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
+        ret
+        maybe_ty
+    where
+        ret :: Either [Trait] TCon -> Apply Type
+        ret (Left traits) = do
+            sequence_ $ map (\trait -> maybe
+                 (throwE $ TraitNotInScopeErr $ TraitNotInScopeError { trait })
+                 (\types -> if notElem cty types
+                    then throwE $ NotImplTraitErr $ NotImplTraitError { ty = cty, trait }
+                    else return ())
+                 (Map.lookup trait traitsTable)) traits
+            lift $ modify $ Map.insert var $ Right cty
+            return got
+        ret (Right expected) =
+            if TCon expected == got
+                then return got
+                else throwE $ TypeErr $ TypeError { expected = TCon expected, got }
+apply' _ = error "Unexpected type variable, really should never happen"
+
+-- Applies an argument list to a function, returning its result type if all types matches.
+-- Supports parametric polymorphism.
+-- TODO: Better document this function (or I won't be able to ever read it again).
+apply :: Type -> [Type] -> Either Error Type
+apply (TFun tvars t1s t2) t3s | length t1s == length t3s = do
+    let zipped = zip t1s t3s
+    (unified, scope) <- tvars |> Map.map Left
+                              |> (zipped |> map apply' |> sequence |> runExceptT |> runState)
+                              |> \(out, state) -> do { out' <- out ; return (out', state) }
+    case t2 of
+        TVar got@(TV name) -> maybe
+            (Left $ NotInScopeErr $ NotInScopeError { ident = name })
+            ret
+            (Map.lookup got scope)
+        TCon _ -> return t2
+    where
+        ret (Left traits) = error "Not completely instantied function, should never happen"
+        ret (Right got) = return $ TCon got
+apply (TFun _ t1s _) t3s =
+    Left $ ArgCountErr $ ArgCountError { expected = length t1s, got = length t3s }
+
+annotateAST :: P.AST a -> Either Error (P.AST Type)
 annotateAST stmts =
     stmts |> map (\(Ann _ stmt) -> annotate1 stmt)
           |> sequence
           |> runExceptT
           |> flip evalState defaultEnv
+
+defaultEnv :: Env
+defaultEnv = Env {
+    bin_ops = T.builtinBinaryOps,
+    un_ops = T.builtinUnaryOps,
+    fn_defs = Map.empty,
+    vars = []
+}

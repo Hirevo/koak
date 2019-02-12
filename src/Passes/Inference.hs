@@ -1,79 +1,23 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleInstances #-}
-module Inference where
+module Passes.Inference where
 
 import Annotation
+import Errors
 import Misc
 import Unifier
-import Misc
-import qualified Parser.Lang as P
-import Types as T
+import Control.Applicative
+import Control.Monad.Except
 import Control.Monad.State.Lazy
 import Control.Monad.Trans.Except
-import Control.Monad.Except
-import Control.Applicative
-import Data.List (find, findIndex, intersperse)
-import Data.Maybe (isJust, isNothing, fromJust, fromMaybe)
-import Data.Either (isRight, isLeft)
+
+import Types as T
+
 import qualified Data.Map as Map
+import qualified Parser.Lang as P
 
-data Error =
-    TypeErr TypeError
-    | ArgCountErr ArgCountError
-    | NotInScopeErr NotInScopeError
-    | AssignErr AssignError
-    | NotImplTraitErr NotImplTraitError
-    | TraitNotInScopeErr TraitNotInScopeError
-    deriving (Eq)
-instance Show Error where
-    show (TypeErr err) = show err
-    show (ArgCountErr err) = show err
-    show (NotInScopeErr err) = show err
-    show (AssignErr err) = show err
-    show (NotImplTraitErr err) = show err
-    show (TraitNotInScopeErr err) = show err
-data TypeError = TypeError {
-    expected :: Type,
-    got :: Type
-} deriving (Eq)
-instance Show TypeError where
-    show TypeError { expected, got } =
-        "TypeError (expected: " ++ show expected
-            ++ ", got: " ++ show got ++ ")"
-data ArgCountError = ArgCountError {
-    expected :: Int,
-    got :: Int
-} deriving (Eq)
-instance Show ArgCountError where
-    show ArgCountError { expected, got } =
-        "ArgCountError (expected: " ++ show expected
-            ++ ", got: " ++ show got ++ ")"
-newtype NotInScopeError = NotInScopeError {
-    ident :: Name
-} deriving (Eq)
-instance Show NotInScopeError where
-    show NotInScopeError { ident } = "NotInScopeError: '" ++ ident ++ "'"
-data AssignError = AssignError deriving (Eq)
-instance Show AssignError where
-    show AssignError =
-        "AssignError (expected identifier on the left-hand side of an assignment)"
-data NotImplTraitError = NotImplTraitError {
-    ty :: TCon,
-    trait :: Trait
-} deriving (Eq)
-instance Show NotImplTraitError where
-    show NotImplTraitError { ty, trait } =
-        "NotImplTraitError: The type '" ++ show ty ++ "' does not implement the '"
-            ++ show trait ++ "' trait."
-newtype TraitNotInScopeError = TraitNotInScopeError {
-    trait :: Trait
-} deriving (Eq)
-instance Show TraitNotInScopeError where
-    show TraitNotInScopeError { trait } =
-        "TraitNotInScopeError: The trait '" ++ show trait ++ "' is not defined."
-
-type Scope = [(Name, Type)]
+type Scope = Map.Map Name Type
 data Env = Env {
     bin_ops :: Scope,
     un_ops :: Scope,
@@ -82,25 +26,24 @@ data Env = Env {
 } deriving (Show, Eq)
 type Inferred = ExceptT Error (State Env)
 
-pushVar :: (Name, Type) -> State Env ()
-pushVar def = modify $ \env ->
-    if null $ vars env
-        then env { vars = [[def]] }
-        else env { vars = (def : head (vars env)) : tail (vars env) }
-
 newScope, dropScope :: State Env ()
-newScope = modify $ \env -> env { vars = [] : vars env }
+newScope = modify $ \env -> env { vars = Map.empty : vars env }
 dropScope = modify $ \env -> env { vars = tail $ vars env }
 
-pushFnDef, pushBinOp, pushUnOp :: (Name, Type) -> State Env ()
-pushFnDef def = modify $ \env -> env { fn_defs = def : fn_defs env }
-pushBinOp def = modify $ \env -> env { bin_ops = def : bin_ops env }
-pushUnOp def = modify $ \env -> env { un_ops = def : un_ops env }
+pushFnDef, pushBinOp, pushUnOp, pushVar :: Name -> Type -> State Env ()
+pushFnDef name ty = modify $ \env -> env { fn_defs = Map.insert name ty $ fn_defs env }
+pushBinOp name ty = modify $ \env -> env { bin_ops = Map.insert name ty $ bin_ops env }
+pushUnOp name ty = modify $ \env -> env { un_ops = Map.insert name ty $ un_ops env }
+pushVar name ty = modify $ \env ->
+    if null $ vars env
+        then env { vars = [Map.singleton name ty] }
+        else env { vars = Map.insert name ty (head $ vars env) : tail (vars env) }
 
-traitsTable :: Map.Map Trait [TCon]
-traitsTable = Map.fromList [ (Trait "Num", [TC "int", TC "double"])
-                           , (Trait "Eq",  [TC "int", TC "double", TC "void"])
-                           , (Trait "Ord", [TC "int", TC "double"]) ]
+getFnDef, getBinOp, getUnOp, getVar :: Name -> State Env (Maybe Type)
+getFnDef name = gets $ \env -> env |> fn_defs |> Map.lookup name
+getBinOp name = gets $ \env -> env |> bin_ops |> Map.lookup name
+getUnOp name = gets $ \env -> env |> un_ops |> Map.lookup name
+getVar name = gets $ \env -> env |> vars |> map (Map.lookup name) |> foldl1 (<|>)
 
 class Infer a where
     infer :: a -> Inferred Type
@@ -137,12 +80,26 @@ instance Infer (P.OpDefn ()) where
         P.opdefn_body = Ann _ body
     } = do
         lift newScope
-        tys <- sequence $ map (\(Ann _ a) -> infer a) args
+        tys <- args |> map (\(Ann _ a) -> infer a) |> sequence
         expected <- infer ret_ty
         let ty = TFun Map.empty tys expected
         case arity of
-            P.Binary -> lift $ pushBinOp (op, ty)
-            P.Unary -> lift $ pushUnOp (op, ty)
+            P.Binary -> do
+                maybe_op <- lift $ getBinOp op
+                case maybe_op of
+                    Just ty2 -> throwE $ MultipleDefnErr $ MultipleDefnError {
+                        name = op,
+                        definitions = [ty2, ty]
+                    }
+                    Nothing -> lift $ pushBinOp op ty
+            P.Unary -> do
+                maybe_op <- lift $ getUnOp op
+                case maybe_op of
+                    Just ty2 -> throwE $ MultipleDefnErr $ MultipleDefnError {
+                        name = op,
+                        definitions = [ty2, ty]
+                    }
+                    Nothing -> lift $ pushUnOp op ty
         inferred <- infer body
         lift dropScope
         if inferred == expected
@@ -155,7 +112,7 @@ instance Infer (P.OpDefn ()) where
 instance Infer P.Arg where
     infer P.Arg { P.arg_name = name, P.arg_type = arg_ty } = do
         ty <- infer arg_ty
-        lift $ pushVar (name, ty)
+        lift $ pushVar name ty
         return ty
 
 -- TODO: Check if fn already exists (in any scope ?).
@@ -167,10 +124,15 @@ instance Infer (P.FnDefn ()) where
         P.fndefn_body = Ann _ body
     } = do
         lift newScope
-        tys <- sequence $ map (\(Ann _ a) -> infer a) args
+        tys <- args |> map (\(Ann _ a) -> infer a) |> sequence
         expected <- infer ret_ty
         let ty = TFun Map.empty tys expected
-        lift $ pushFnDef (name, ty)
+        maybe_fn <- lift $ getFnDef name
+        case maybe_fn of
+            Just ty2 -> throwE $ MultipleDefnErr $ MultipleDefnError {
+                name, definitions = [ty2, ty]
+            }
+            Nothing -> lift $ pushFnDef name ty
         inferred <- infer body
         lift dropScope
         if inferred == expected
@@ -188,7 +150,7 @@ instance Infer (P.ForExpr ()) where
         P.for_body = Ann _ body
     } = do
         lift newScope
-        tys <- sequence $ map infer [init, cond, oper]
+        tys <- [init, cond, oper] |> map infer |> sequence
         ty <- infer body
         lift dropScope
         return ty
@@ -232,12 +194,12 @@ instance Infer (P.CallExpr ()) where
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { fn_defs } ->
-                lookup name fn_defs
+                Map.lookup name fn_defs
             maybe
                 (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
                 return
                 found
-        args_tys <- sequence $ map (\(Ann _ a) -> infer a) args
+        args_tys <- args |> map (\(Ann _ a) -> infer a) |> sequence
         case apply fun_ty args_tys of
             Right ty -> return ty
             Left err -> throwE err
@@ -252,7 +214,7 @@ instance Infer (P.BinExpr ()) where
         ty <- infer rhs
         case lhs of
             P.Ident (Ann _ name) -> do
-                lift $ pushVar (name, ty)
+                lift $ pushVar name ty
                 return ty
             _ -> throwE $ AssignErr AssignError
     infer P.BinExpr {
@@ -262,12 +224,12 @@ instance Infer (P.BinExpr ()) where
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { bin_ops } ->
-                lookup name bin_ops
+                Map.lookup name bin_ops
             maybe
                 (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
                 return
                 found
-        args_tys <- sequence $ map infer [lhs, rhs]
+        args_tys <- [lhs, rhs] |> map infer |> sequence
         case apply fun_ty args_tys of
             Right ty -> return ty
             Left err -> throwE err
@@ -279,12 +241,12 @@ instance Infer (P.UnExpr ()) where
     } = do
         fun_ty <- do
             found <- lift $ gets $ \Env { un_ops } ->
-                lookup name un_ops
+                Map.lookup name un_ops
             maybe
                 (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
                 return
                 found
-        args_tys <- sequence $ map infer [arg]
+        args_tys <- [arg] |> map infer |> sequence
         case apply fun_ty args_tys of
             Right ty -> return ty
             Left err -> throwE err
@@ -295,7 +257,7 @@ instance Infer (P.Expr ()) where
     infer (P.While (Ann _ whileExpr)) = infer whileExpr
     infer (P.Ident (Ann _ ident)) = do
         found <- lift $ gets $ \Env { bin_ops, un_ops, fn_defs, vars } ->
-            foldl (<|>) Nothing $ fmap (lookup ident) (vars ++ [fn_defs, un_ops, bin_ops])
+            foldl (<|>) Nothing $ fmap (Map.lookup ident) (vars ++ [fn_defs, un_ops, bin_ops])
         maybe
             (throwE $ NotInScopeErr $ NotInScopeError { ident })
             return
@@ -342,10 +304,9 @@ apply' _ = error "Unexpected type variable, really should never happen"
 apply :: Type -> [Type] -> Either Error Type
 apply (TFun tvars t1s t2) t3s | length t1s == length t3s = do
     let zipped = zip t1s t3s
-    (unified, scope) <- tvars
-        |> Map.map Left
-        |> runState (runExceptT $ sequence $ map apply' zipped)
-        |> \(out, state) -> do { out' <- out ; return (out', state) }
+    (unified, scope) <- tvars |> Map.map Left
+                              |> (zipped |> map apply' |> sequence |> runExceptT |> runState)
+                              |> \(out, state) -> do { out' <- out ; return (out', state) }
     case t2 of
         TVar got@(TV name) -> maybe
             (Left $ NotInScopeErr $ NotInScopeError { ident = name })
@@ -367,21 +328,8 @@ inferAST stmts =
 
 defaultEnv :: Env
 defaultEnv = Env {
-    bin_ops = [
-        ( "+", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
-        ( "-", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
-        ( "*", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
-        ( "/", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
-        ( "<", TFun (Map.fromList [(TV "T", [Trait "Ord"])]) [TVar $ TV "T", TVar $ TV "T"] T.int),
-        ( ">", TFun (Map.fromList [(TV "T", [Trait "Ord"])]) [TVar $ TV "T", TVar $ TV "T"] T.int),
-        ("==", TFun (Map.fromList [(TV "T", [Trait "Eq"])]) [TVar $ TV "T", TVar $ TV "T"] T.int),
-        ("!=", TFun (Map.fromList [(TV "T", [Trait "Eq"])]) [TVar $ TV "T", TVar $ TV "T"] T.int),
-        ( ":", TFun (Map.fromList [(TV "T", []), (TV "U", [])]) [TVar $ TV "T", TVar $ TV "U"] (TVar $ TV "U"))
-    ],
-    un_ops = [
-        ("!", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T"] T.int),
-        ("-", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T"] (TVar $ TV "T"))
-    ],
-    fn_defs = [],
+    bin_ops = T.builtinBinaryOps,
+    un_ops = T.builtinUnaryOps,
+    fn_defs = Map.empty,
     vars = []
 }

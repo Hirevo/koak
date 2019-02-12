@@ -1,7 +1,4 @@
 
-def unary ! 5 (x: int): int
-    if x then 0 else 1;
-
 def binary ^ 60 (x: int, y: int): int
     for i = 0, i < y, y = y + 1
         in x = x * 1;

@@ -1,13 +1,16 @@
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE NamedFieldPuns #-}
 module Parser.Lang where
 
-import Control.Applicative
-import Parser.Lib
-import Data.Char (isSpace)
-import Data.List (sortBy)
-import Control.Monad.State.Lazy
 import Annotation
 import Misc
-import Debug.Trace
+import Parser.Lib
+import Control.Applicative
+import Control.Monad.State.Lazy
+import System.IO.Unsafe
+
+import Data.Char (isSpace)
+import Data.List (sortBy)
 
 data PrecMap = PrecMap {
     bin_prec :: [(String, Int)],
@@ -99,6 +102,13 @@ data UnExpr a = UnExpr {
     un_rhs :: Ann a (Expr a)
 } deriving (Show, Eq)
 
+withRangeT :: (Monad (m Parser), MonadTrans m) => m Parser a -> m Parser (a, Range)
+withRangeT parser = do
+    start <- lift currentPos
+    ret <- parser
+    end <- lift currentPos
+    return (ret, Range { start, end })
+
 defaultPrecedenceMap :: PrecMap
 defaultPrecedenceMap = PrecMap {
     bin_prec = [ ( "*", 50), ( "/", 50)
@@ -139,16 +149,11 @@ readInt = read
 readFloat :: String -> Float
 readFloat = read
 
-lower :: Parser Char
+lower, upper, digit, symbol, dot :: Parser Char
 lower = pRange 'a' 'z'
-
-upper :: Parser Char
 upper = pRange 'A' 'Z'
-
-digit :: Parser Char
 digit = pRange '0' '9'
-
-dot :: Parser Char
+symbol = pAnyOf "!#$%&*=+<.>/?@\\-^|~"
 dot = pChar '.'
 
 identifier :: Parser String
@@ -185,140 +190,142 @@ doubleConst =
 
 literal :: Parser Literal
 literal =
-    doubleConst
+    (doubleConst
     <|> decimalConst
-    <|> (const VoidLiteral <$> pString "()")
+    <|> (const VoidLiteral <$> pString "()")) ?? "Expected a literal"
 
-spacing :: Parser String
+spacing, optSpacing :: Parser String
 spacing = some (satisfy isSpace <|> (pString "--" *> whileNot (pChar '\n') *> pChar '\n'))
-
-optSpacing :: Parser String
 optSpacing = many (satisfy isSpace <|> (pString "--" *> whileNot (pChar '\n') *> pChar '\n'))
 
-expressions :: KoakParser (Expr ())
+expressions :: KoakParser (Expr Range)
 expressions =
-    (For . Ann () <$> forExpression)
-    <|> (If . Ann () <$> ifExpr)
-    <|> (While . Ann () <$> whileExpr)
+    (For . uncurry (flip Ann) <$> withRangeT forExpression)
+    <|> (If . uncurry (flip Ann) <$> withRangeT ifExpr)
+    <|> (While . uncurry (flip Ann) <$> withRangeT whileExpr)
     <|> expression
 
-forExpression :: KoakParser (ForExpr ())
+forExpression :: KoakParser (ForExpr Range)
 forExpression = do
     lift $ optSpacing *> pString "for"
     lift spacing
-    init <- expression
+    (init, init_range) <- withRangeT expression
     lift $ optSpacing *> pChar ','
     lift optSpacing
-    cond <- expression
+    (cond, cond_range) <- withRangeT expression
     lift $ optSpacing *> pChar ','
     lift optSpacing
-    oper <- expression
+    (oper, oper_range) <- withRangeT expression
     lift $ optSpacing *> pString "in"
     lift optSpacing
-    body <- expressions
+    (body, body_range) <- withRangeT expressions
     return $ ForExpr {
-        for_init = Ann () init,
-        for_cond = Ann () cond,
-        for_oper = Ann () oper,
-        for_body = Ann () body
+        for_init = Ann init_range init,
+        for_cond = Ann cond_range cond,
+        for_oper = Ann oper_range oper,
+        for_body = Ann body_range body
     }
 
-ifExpr :: KoakParser (IfExpr ())
+ifExpr :: KoakParser (IfExpr Range)
 ifExpr = do
     lift $ optSpacing *> pString "if"
     lift spacing
-    if_expr <- expression
+    (if_expr, if_range) <- withRangeT expression
     lift $ spacing *> pString "then"
     lift spacing
-    then_body <- expressions
+    (then_body, then_range) <- withRangeT expressions
     precMap <- get
-    else_body <- lift $ optional $ do
+    else_body <- lift $ optional $ withRange $ do
         spacing
         pString "else"
         spacing
         evalStateT expressions precMap
     return $ IfExpr {
-        if_cond = Ann () if_expr,
-        if_then = Ann () then_body,
-        if_else = Ann () <$> else_body
+        if_cond = Ann if_range if_expr,
+        if_then = Ann then_range then_body,
+        if_else = uncurry (flip Ann) <$> else_body
     }
 
-whileExpr :: KoakParser (WhileExpr ())
+whileExpr :: KoakParser (WhileExpr Range)
 whileExpr = do
     lift $ optSpacing *> pString "while"
     lift spacing
-    while_expr <- expression
+    (while_expr, while_range) <- withRangeT expression
     lift $ spacing *> pString "do"
     lift spacing
-    body <- expressions
+    (body, body_range) <- withRangeT expressions
     return $ WhileExpr {
-        while_cond = Ann () while_expr,
-        while_body = Ann () body
+        while_cond = Ann while_range while_expr,
+        while_body = Ann body_range body
     }
 
-parseBinOp :: Expr () -> Int -> KoakParser (Expr ())
+parseBinOp :: (Expr Range, Range) -> Int -> KoakParser (Expr Range)
 parseBinOp lhs minPrec = do
     s <- get
     let pBinOp = evalStateT binOp s
     let pUnary = evalStateT unary s
-    let outer lhs minPrec = fallback lhs $ do
+    let outer lhs minPrec = fallback (fst lhs) $ do
          optSpacing
          (_, prec) <- peek pBinOp
-         if prec < minPrec then empty else fallback lhs $ do
+         if prec < minPrec then empty else fallback (fst lhs) $ do
              optSpacing
              (op, prec) <- pBinOp
              optSpacing
-             rhs <- pUnary
-             let expr = Bin $ Ann () $ BinExpr {
+             rhs <- withRange pUnary
+             let range = Range{ start = start (snd lhs), end = end (snd rhs) }
+             let expr = Bin $ Ann range $ BinExpr {
                  bin_op = op,
-                 bin_lhs = Ann () lhs,
-                 bin_rhs = Ann () rhs
+                 bin_lhs = Ann (snd lhs) (fst lhs),
+                 bin_rhs = Ann (snd rhs) (fst rhs)
              }
-             let inner rhs' = fallback rhs' $ do
+             let inner rhs' = fallback (fst rhs') $ do
                   optSpacing
                   (_, prec') <- peek pBinOp
-                  if prec' <= prec then empty else fallback rhs' $ do
+                  if prec' <= prec then empty else fallback (fst rhs') $ do
                      let pBinExpr = evalStateT (parseBinOp rhs' prec') s
                      optSpacing
-                     rhs <- pBinExpr
+                     rhs <- withRange pBinExpr
                      inner rhs
-             lhs <- fallback expr $ do
-                rhs <- inner rhs
-                return $ Bin $ Ann () $ BinExpr {
+             lhs' <- fallback (expr, range) $ do
+                rhs' <- withRange $ inner rhs
+                let range' = Range{ start = start (snd lhs), end = end (snd rhs') }
+                return (Bin $ Ann range' $ BinExpr {
                     bin_op = op,
-                    bin_lhs = Ann () lhs,
-                    bin_rhs = Ann () rhs
-                }
-             outer lhs minPrec
+                    bin_lhs = Ann (snd lhs) (fst lhs),
+                    bin_rhs = Ann (snd rhs') (fst rhs')
+                }, range')
+             outer lhs' minPrec
     lift $ outer lhs minPrec
 
-expression :: KoakParser (Expr ())
+expression :: KoakParser (Expr Range)
 expression = do
     precMap <- get
     lift optSpacing
-    lhs <- unary
+    lhs <- withRangeT unary
     parseBinOp lhs 0
 
-unary :: KoakParser (Expr ())
+unary :: KoakParser (Expr Range)
 unary = do
     precMap <- get
     lift optSpacing
     let p1 = do
-         operator <- lift $ choice $ map (pString . fst) $ un_prec precMap
-         lift optSpacing
-         operand <- unary
-         return $ Un $ Ann () $ UnExpr {
-             un_op = operator,
-             un_rhs = Ann () operand
-         }
+         (expr, range) <- withRangeT $ do
+             operator <- lift $ choice $ map (pString . fst) $ un_prec precMap
+             lift optSpacing
+             (operand, operand_range) <- withRangeT unary
+             return UnExpr {
+                 un_op = operator,
+                 un_rhs = Ann operand_range operand
+             }
+         return $ Un $ Ann range expr
     p1 <|> postfix
 
-postfix :: KoakParser (Expr ())
+postfix :: KoakParser (Expr Range)
 postfix = do
     precMap <- get
     lift optSpacing
-    let ident = lift $ Ident . Ann () <$> identifier
-    let lit = lift $ Lit . Ann () <$> literal
+    let ident = lift $ Ident . uncurry (flip Ann) <$> withRange identifier
+    let lit = lift $ Lit . uncurry (flip Ann) <$> withRange literal
     let paren = do
          lift $ pChar '('
          lift optSpacing
@@ -327,19 +334,21 @@ postfix = do
          return expr
     let primary = ident <|> lit <|> paren
     let callExpr = do
+         start <- lift currentPos
          name <- lift identifier
          lift optSpacing
          args <- do
             lift $ pChar '('
             precMap <- get
             let pExpr = evalStateT expression precMap
-            args <- lift $ sepBy0 (optSpacing *> pChar ',') (optSpacing *> pExpr)
+            args <- lift $ sepBy0 (optSpacing *> pChar ',') (uncurry (flip Ann) <$> withRange (optSpacing *> pExpr))
             lift optSpacing
             lift $ pChar ')'
             return args
-         return $ Call $ Ann () $ CallExpr {
+         end <- lift currentPos
+         return $ Call $ Ann Range{ start, end } $ CallExpr {
              call_ident = name,
-             call_args = Ann () <$> args
+             call_args = args
          }
     callExpr <|> primary
 
@@ -353,20 +362,20 @@ argument = do
         arg_type = ty
     }
 
-defnUnaryStatment :: KoakParser (OpDefn ())
+defnUnaryStatment :: KoakParser (OpDefn Range)
 defnUnaryStatment = do
     lift $ optSpacing *> pString "def"
     lift $ spacing *> pString "unary"
-    name <- lift $ optSpacing *> whileNot (pAnyOf " \n\t" <|> lower <|> upper <|> digit)
+    name <- lift $ optSpacing *> some symbol
     prec <- lift $ optSpacing *> integer
-    arg <- lift $ between
+    (arg, arg_range) <- lift $ between
         (optSpacing *> pChar '(')
         (optSpacing *> pChar ')')
-        argument
+        (withRange argument)
     lift $ optSpacing *> pChar ':'
     ret_ty <- lift $ optSpacing *> typeName
     lift optSpacing
-    exprs <- expressions
+    (exprs, exprs_range) <- withRangeT expressions
     lift $ optSpacing *> pChar ';'
     s <- get
     put $ PrecMap {
@@ -377,25 +386,25 @@ defnUnaryStatment = do
         opdefn_op = name,
         opdefn_prec = prec,
         opdefn_arity = Unary,
-        opdefn_args = [Ann () arg],
+        opdefn_args = [Ann arg_range arg],
         opdefn_ret_ty = ret_ty,
-        opdefn_body = Ann () exprs
+        opdefn_body = Ann exprs_range exprs
     }
 
-defnBinaryStatment :: KoakParser (OpDefn ())
+defnBinaryStatment :: KoakParser (OpDefn Range)
 defnBinaryStatment = do
     lift $ optSpacing *> pString "def"
     lift $ spacing *> pString "binary"
-    name <- lift $ optSpacing *> whileNot (pAnyOf " \n\t" <|> lower <|> upper <|> digit)
+    name <- lift $ optSpacing *> some symbol
     prec <- lift $ optSpacing *> integer
-    (arg1, arg2) <- lift $ between
+    ((arg1, arg1_range), (arg2, arg2_range)) <- lift $ between
         (optSpacing *> pChar '(')
         (optSpacing *> pChar ')')
-        (both argument (optSpacing *> pChar ',' *> argument))
+        (both (withRange argument) (withRange (optSpacing *> pChar ',' *> argument)))
     lift $ optSpacing *> pChar ':'
     ret_ty <- lift $ optSpacing *> typeName
     lift optSpacing
-    exprs <- expressions
+    (exprs, exprs_range) <- withRangeT expressions
     lift $ optSpacing *> pChar ';'
     s <- get
     put $ PrecMap {
@@ -406,62 +415,62 @@ defnBinaryStatment = do
         opdefn_op = name,
         opdefn_prec = prec,
         opdefn_arity = Binary,
-        opdefn_args = [Ann () arg1, Ann () arg2],
+        opdefn_args = [Ann arg1_range arg1, Ann arg2_range arg2],
         opdefn_ret_ty = ret_ty,
-        opdefn_body = Ann () exprs
+        opdefn_body = Ann exprs_range exprs
     }
 
-defnFuncStatment :: KoakParser (FnDefn ())
+defnFuncStatment :: KoakParser (FnDefn Range)
 defnFuncStatment = do
     lift $ optSpacing *> pString "def"
     name <- lift $ optSpacing *> identifier
     args <- lift $ between
         (optSpacing *> pChar '(')
         (optSpacing *> pChar ')')
-        (sepBy0 (optSpacing *> pChar ',') argument)
+        (sepBy0 (optSpacing *> pChar ',') (withRange argument))
     lift $ optSpacing *> pChar ':'
     ret_ty <- lift $ optSpacing *> typeName
     lift optSpacing
-    exprs <- expressions
+    (exprs, exprs_range) <- withRangeT expressions
     lift $ optSpacing *> pChar ';'
     return $ FnDefn {
         fndefn_name = name,
-        fndefn_args = Ann () <$> args,
+        fndefn_args = uncurry (flip Ann) <$> args,
         fndefn_ret_ty = ret_ty,
-        fndefn_body = Ann () exprs
+        fndefn_body = Ann exprs_range exprs
     }
 
-defnStatement :: KoakParser (Defn ())
+defnStatement :: KoakParser (Defn Range)
 defnStatement =
-    (Op . Ann () <$> defnUnaryStatment)
-    <|> (Op . Ann () <$> defnBinaryStatment)
-    <|> (Fn . Ann () <$> defnFuncStatment)
+    (Op . uncurry (flip Ann) <$> withRangeT defnUnaryStatment)
+    <|> (Op . uncurry (flip Ann) <$> withRangeT defnBinaryStatment)
+    <|> (Fn . uncurry (flip Ann) <$> withRangeT defnFuncStatment)
 
-exprStatement :: KoakParser (Expr ())
+exprStatement :: KoakParser (Expr Range)
 exprStatement = do
     lift optSpacing
     expr <- expressions
     lift $ optSpacing *> pChar ';'
     return expr
 
-statement :: KoakParser (Stmt ())
+statement :: KoakParser (Stmt Range)
 statement =
-    (DefnStmt . Ann () <$> defnStatement)
-    <|> (ExprStmt . Ann () <$> exprStatement)
+    (DefnStmt . uncurry (flip Ann) <$> withRangeT defnStatement)
+    <|> (ExprStmt . uncurry (flip Ann) <$> withRangeT exprStatement)
 
-statements :: KoakParser (AST ())
+statements :: KoakParser (AST Range)
 statements = do
     lift optSpacing
-    stmt <- Ann () <$> statement
+    stmt <- uncurry (flip Ann) <$> withRangeT statement
     s <- get
     lift $ fallback [stmt] $ do
         stmts <- evalStateT statements s
         return (stmt : stmts)
 
-program :: Parser (AST ())
+program :: Parser (AST Range)
 program = evalStateT allStatements defaultPrecedenceMap
     where
-        allStatements :: KoakParser (AST ())
+        allStatements :: KoakParser (AST Range)
         allStatements = do
             stmts <- statements
             lift $ optSpacing *> pEnd
