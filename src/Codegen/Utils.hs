@@ -11,6 +11,7 @@ import Data.Char (ord)
 import qualified Types as Ty
 import qualified LLVM.AST as AST
 import qualified LLVM.AST.Constant as Cst
+import qualified LLVM.AST.FunctionAttribute as FnAttr
 import qualified LLVM.AST.Global as Glb
 import qualified LLVM.AST.Linkage as Lnk
 import qualified LLVM.AST.Type as T
@@ -103,6 +104,31 @@ function name argtys retty body = do
         Glb.basicBlocks = body
     }
     let funty = T.ptr $ AST.FunctionType retty (map snd argtys) False
+    pure $ AST.ConstantOperand $ Cst.GlobalReference funty name
+
+inlineFunction :: M.MonadModuleBuilder m
+  => AST.Name
+  -> [(T.Type, M.ParameterName)]
+  -> AST.Type
+  -> ([AST.Operand] -> Mn.IRBuilderT m ())
+  -> m AST.Operand
+inlineFunction name argtys retty body = do
+    let tys = fst <$> argtys
+    (paramNames, blocks) <- Mn.runIRBuilderT Mn.emptyIRBuilder $ do
+        paramNames <- forM argtys $ \(_, paramName) -> case paramName of
+            M.NoParameterName -> Mn.fresh
+            M.ParameterName p -> Mn.fresh `Mn.named` p
+        body $ zipWith AST.LocalReference tys paramNames
+        return paramNames
+    let def = AST.GlobalDefinition Glb.functionDefaults {
+        Glb.name = name,
+        Glb.functionAttributes = [Right FnAttr.AlwaysInline],
+        Glb.parameters = (zipWith (\ty nm -> AST.Parameter ty nm []) tys paramNames, False),
+        Glb.returnType = retty,
+        Glb.basicBlocks = blocks
+    }
+    let funty = T.ptr $ AST.FunctionType retty (fst <$> argtys) False
+    M.emitDefn def
     pure $ AST.ConstantOperand $ Cst.GlobalReference funty name
 
 -- | An external function definition

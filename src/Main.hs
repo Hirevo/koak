@@ -38,11 +38,11 @@ run fn = haskFun (castFunPtr fn :: FunPtr (IO Int))
 
 jit :: Ctx.Context -> (EE.MCJIT -> IO a) -> IO a
 jit c = EE.withMCJIT c optlevel model ptrelim fastins
-  where
-    optlevel = Just 2  -- optimization level
-    model    = Nothing -- code model (Default)
-    ptrelim  = Nothing -- frame pointer elimination
-    fastins  = Nothing -- fast instruction selection
+    where
+        optlevel = Just 2
+        model    = Nothing
+        ptrelim  = Nothing
+        fastins  = Nothing
 
 printBuiltinOps :: IO ()
 printBuiltinOps = do
@@ -81,6 +81,7 @@ main = flip catchIOError (\err -> do
                             --       |> putStrLn
                             Ctx.withContext $ \ctx -> do
                                 let mod = codegenAST types
+                                mod |> ppllvm |> unpack |> putStrLn
                                 Mdl.withModuleFromAST ctx mod $ \mod' ->
                                     jit ctx $ \ecjit -> EE.withModuleInEngine ecjit mod' $ \ee -> do
                                         mainfn <- EE.getFunction ee (AST.mkName "main")

@@ -2,6 +2,12 @@
 def test(x: int): int
     x + 2;
 
-test(5);
-test(6);
+def fib(n: int): int
+    if n > 1
+        then fib(n - 1) + fib(n - 2)
+        else 1;
 
+if 1 then 1 else if 0 then 2 else 3;
+
+test(-5);
+fib(10);
