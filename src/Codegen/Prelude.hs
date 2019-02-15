@@ -4,6 +4,7 @@ module Codegen.Prelude where
 
 import Data.Char (ord)
 
+import qualified Types as Ty
 import qualified Codegen.Utils as U
 import qualified LLVM.AST as AST
 import qualified LLVM.AST.Constant as Cst
@@ -15,18 +16,11 @@ import qualified LLVM.IRBuilder.Constant as C
 import qualified LLVM.IRBuilder.Instruction as I
 import qualified LLVM.IRBuilder.Module as M
 import qualified LLVM.IRBuilder.Monad as Mn
-
-prelude :: M.MonadModuleBuilder m => [m AST.Operand]
-prelude = [
-        addInt, addDouble,
-        subInt, subDouble,
-        multInt, multDouble,
-        divInt, divDouble
-    ]
+import qualified Data.Map as Map
 
 addInt, addDouble :: M.MonadModuleBuilder m => m AST.Operand
 addInt =
-    let name = AST.mkName "addInt"
+    let name = AST.mkName "add_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
     in M.function name params ret_ty $ \[a, b] -> mdo
@@ -34,7 +28,7 @@ addInt =
         result <- I.add a b
         I.ret result
 addDouble =
-    let name = AST.mkName "addDouble"
+    let name = AST.mkName "add_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.double
     in M.function name params ret_ty $ \[a, b] -> mdo
@@ -44,7 +38,7 @@ addDouble =
 
 subInt, subDouble :: M.MonadModuleBuilder m => m AST.Operand
 subInt =
-    let name = AST.mkName "subInt"
+    let name = AST.mkName "sub_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
     in M.function name params ret_ty $ \[a, b] -> mdo
@@ -52,7 +46,7 @@ subInt =
         result <- I.sub a b
         I.ret result
 subDouble =
-    let name = AST.mkName "subDouble"
+    let name = AST.mkName "sub_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.double
     in M.function name params ret_ty $ \[a, b] -> mdo
@@ -62,7 +56,7 @@ subDouble =
 
 multInt, multDouble :: M.MonadModuleBuilder m => m AST.Operand
 multInt =
-    let name = AST.mkName "multInt"
+    let name = AST.mkName "mult_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
     in M.function name params ret_ty $ \[a, b] -> mdo
@@ -70,7 +64,7 @@ multInt =
         result <- I.mul a b
         I.ret result
 multDouble =
-    let name = AST.mkName "multDouble"
+    let name = AST.mkName "mult_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.double
     in M.function name params ret_ty $ \[a, b] -> mdo
@@ -80,7 +74,7 @@ multDouble =
 
 divInt, divDouble :: M.MonadModuleBuilder m => m AST.Operand
 divInt =
-    let name = AST.mkName "divInt"
+    let name = AST.mkName "div_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
     in M.function name params ret_ty $ \[a, b] -> mdo
@@ -88,7 +82,7 @@ divInt =
         result <- I.sdiv a b
         I.ret result
 divDouble =
-    let name = AST.mkName "divDouble"
+    let name = AST.mkName "div_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.double
     in M.function name params ret_ty $ \[a, b] -> mdo

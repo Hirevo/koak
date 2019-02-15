@@ -115,7 +115,6 @@ instance Infer P.Arg where
         lift $ pushVar name ty
         return ty
 
--- TODO: Check if fn already exists (in any scope ?).
 instance Infer (P.FnDefn ()) where
     infer P.FnDefn {
         P.fndefn_name = name,
@@ -205,7 +204,6 @@ instance Infer (P.CallExpr ()) where
             Left err -> throwE err
 
 instance Infer (P.BinExpr ()) where
-    -- TODO: Check if ${lhs} already exists (in current scope only).
     infer P.BinExpr {
         P.bin_op = "=",
         P.bin_lhs = Ann _ lhs,

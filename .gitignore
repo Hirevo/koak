@@ -1,2 +1,8 @@
 /koak
 /.stack-work
+/test
+*.a
+*.ll
+*.bc
+*.o
+*.c

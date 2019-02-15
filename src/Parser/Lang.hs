@@ -27,11 +27,22 @@ data Stmt a =
     DefnStmt (Ann a (Defn a))
     | ExprStmt (Ann a (Expr a))
     deriving (Show, Eq)
+isDefnStmt, isExprStmt :: Stmt a -> Bool
+isDefnStmt (DefnStmt _) = True
+isDefnStmt _ = False
+isExprStmt (ExprStmt _) = True
+isExprStmt _ = False
+
 data Type =
     IntType
     | FloatType
     | VoidType
     deriving (Show, Eq)
+isIntType, isDoubleType, isVoidType :: Type -> Bool
+isIntType = (== IntType)
+isDoubleType = (== FloatType)
+isVoidType = (== VoidType)
+
 data Arg = Arg {
     arg_name :: String,
     arg_type :: Type
@@ -40,10 +51,20 @@ data Arity =
     Unary
     | Binary
     deriving (Show, Eq)
+isUnary, isBinary :: Arity -> Bool
+isUnary = (== Unary)
+isBinary = (== Binary)
+
 data Defn a =
     Op (Ann a (OpDefn a))
     | Fn (Ann a (FnDefn a))
     deriving (Show, Eq)
+isOpDefn, isFnDefn :: Defn a -> Bool
+isOpDefn (Op _) = True
+isOpDefn _ = False
+isFnDefn (Fn _) = True
+isFnDefn _ = False
+
 data OpDefn a = OpDefn {
     opdefn_op :: String,
     opdefn_prec :: Int,
@@ -68,6 +89,25 @@ data Expr a =
     | If (Ann a (IfExpr a))
     | While (Ann a (WhileExpr a))
     deriving (Show, Eq)
+isCallExpr, isBinExpr, isUnExpr, isLitExpr :: Expr a -> Bool
+isIdentExpr, isForExpr, isIfExpr, isWhileExpr :: Expr a -> Bool
+isCallExpr (Call _) = True
+isCallExpr _ = False
+isBinExpr (Bin _) = True
+isBinExpr _ = False
+isUnExpr (Un _) = True
+isUnExpr _ = False
+isLitExpr (Lit _) = True
+isLitExpr _ = False
+isIdentExpr (Ident _) = True
+isIdentExpr _ = False
+isForExpr (For _) = True
+isForExpr _ = False
+isIfExpr (If _) = True
+isIfExpr _ = False
+isWhileExpr (While _) = True
+isWhileExpr _ = False
+
 data ForExpr a = ForExpr {
     for_init :: Ann a (Expr a),
     for_cond :: Ann a (Expr a),
@@ -88,6 +128,14 @@ data Literal =
     | IntLiteral Int
     | VoidLiteral
     deriving (Show, Eq)
+isIntLiteral, isDoubleLiteral, isVoidLiteral :: Literal -> Bool
+isIntLiteral (IntLiteral _) = True
+isIntLiteral _ = False
+isDoubleLiteral (FloatLiteral _) = True
+isDoubleLiteral _ = False
+isVoidLiteral VoidLiteral = True
+isVoidLiteral _ = False
+
 data CallExpr a = CallExpr {
     call_ident :: String,
     call_args :: [Ann a (Expr a)]

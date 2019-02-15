@@ -13,12 +13,15 @@ extra-source-files:
 
 dependencies:
   - base >= 4.7 && < 5
+  - llvm-hs >= 7
   - llvm-hs-pure >= 7
   - llvm-hs-pretty
   - text
   - mtl
   - transformers
   - containers
+  - bytestring
+  - process
 
 executables:
   koak:
