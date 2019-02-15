@@ -76,6 +76,30 @@ instance Annotate1 P.Stmt where
         annotated_expr <- annotate1 expr
         let ty = annotation annotated_expr
         return $ Ann ty $ P.ExprStmt annotated_expr
+    annotate1 (P.ExternStmt (Ann _ extern)) = do
+        annotated_extern <- annotate1 extern
+        let ty = annotation annotated_extern
+        return $ Ann ty $ P.ExternStmt annotated_extern
+
+instance Annotate1 P.Extern where
+    annotate1 defn@P.Extern {
+        P.ext_name = name,
+        P.ext_args = args,
+        P.ext_ret_ty = ret_ty
+    } = do
+        lift newScope
+        annotated_args <- sequence $ map (\(Ann _ a) -> annotate a) args
+        let tys = map annotation annotated_args
+        Ann expected _ <- annotate ret_ty
+        let ty = TFun Map.empty tys expected
+        maybe_fn <- lift $ getFnDef name
+        case maybe_fn of
+            Just ty2 -> throwE $ MultipleDefnErr $ MultipleDefnError {
+                name, definitions = [ty2, ty]
+            }
+            Nothing -> lift $ pushFnDef name ty
+        lift dropScope
+        return $ Ann ty $ defn { P.ext_args = annotated_args }
 
 instance Annotate1 P.Defn where
     annotate1 (P.Op (Ann _ defn)) = do

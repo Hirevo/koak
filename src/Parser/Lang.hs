@@ -26,12 +26,15 @@ type AST a = [Ann a (Stmt a)]
 data Stmt a =
     DefnStmt (Ann a (Defn a))
     | ExprStmt (Ann a (Expr a))
+    | ExternStmt (Ann a (Extern a))
     deriving (Show, Eq)
-isDefnStmt, isExprStmt :: Stmt a -> Bool
+isDefnStmt, isExprStmt, isExternStmt :: Stmt a -> Bool
 isDefnStmt (DefnStmt _) = True
 isDefnStmt _ = False
 isExprStmt (ExprStmt _) = True
 isExprStmt _ = False
+isExternStmt (ExternStmt _) = True
+isExternStmt _ = False
 
 data Type =
     IntType
@@ -54,6 +57,12 @@ data Arity =
 isUnary, isBinary :: Arity -> Bool
 isUnary = (== Unary)
 isBinary = (== Binary)
+
+data Extern a = Extern {
+    ext_name :: String,
+    ext_args :: [Ann a Arg],
+    ext_ret_ty :: Type
+} deriving (Show, Eq)
 
 data Defn a =
     Op (Ann a (OpDefn a))
@@ -206,8 +215,8 @@ dot = pChar '.'
 
 identifier :: Parser String
 identifier = (:)
-    <$> (lower <|> upper)
-    <*> many (lower <|> upper <|> digit)
+    <$> (lower <|> upper <|> pChar '_')
+    <*> many (lower <|> upper <|> digit <|> pChar '_')
 
 typeName :: Parser Type
 typeName =
@@ -471,7 +480,7 @@ defnBinaryStatment = do
 defnFuncStatment :: KoakParser (FnDefn Range)
 defnFuncStatment = do
     lift $ optSpacing *> pString "def"
-    name <- lift $ optSpacing *> identifier
+    name <- lift $ spacing *> identifier
     args <- lift $ between
         (optSpacing *> pChar '(')
         (optSpacing *> pChar ')')
@@ -501,10 +510,24 @@ exprStatement = do
     lift $ optSpacing *> pChar ';'
     return expr
 
+externStatement :: KoakParser (Extern Range)
+externStatement = do
+    lift $ optSpacing *> pString "extern"
+    name <- lift $ spacing *> identifier
+    args <- lift $ between
+        (optSpacing *> pChar '(')
+        (optSpacing *> pChar ')')
+        (map (uncurry $ flip Ann) <$> sepBy0 (optSpacing *> pChar ',') (withRange argument))
+    lift $ optSpacing *> pChar ':'
+    ret_ty <- lift $ optSpacing *> typeName
+    lift $ optSpacing *> pChar ';'
+    return $ Extern { ext_name = name, ext_args = args, ext_ret_ty = ret_ty }
+
 statement :: KoakParser (Stmt Range)
 statement =
     (DefnStmt . uncurry (flip Ann) <$> withRangeT defnStatement)
     <|> (ExprStmt . uncurry (flip Ann) <$> withRangeT exprStatement)
+    <|> (ExternStmt . uncurry (flip Ann) <$> withRangeT externStatement)
 
 statements :: KoakParser (AST Range)
 statements = do

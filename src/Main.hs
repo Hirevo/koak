@@ -81,7 +81,7 @@ main = flip catchIOError (\err -> do
                             --       |> putStrLn
                             Ctx.withContext $ \ctx -> do
                                 let mod = codegenAST types
-                                mod |> ppllvm |> unpack |> putStrLn
+                                -- mod |> ppllvm |> unpack |> putStrLn
                                 Mdl.withModuleFromAST ctx mod $ \mod' ->
                                     jit ctx $ \ecjit -> EE.withModuleInEngine ecjit mod' $ \ee -> do
                                         mainfn <- EE.getFunction ee (AST.mkName "main")
@@ -91,6 +91,6 @@ main = flip catchIOError (\err -> do
                                         Tgt.withHostTargetMachine $ \tgt ->
                                             Mdl.writeObjectToFile tgt (Mdl.File "out.o") mod'
                                 mod |> ppllvm |> unpack |> writeFile "out.ll"
-                                Pcs.callCommand "cc out.o"
+                                Pcs.callCommand "cc out.o -lm"
                 err -> err |> show |> fail
         _ -> fail $ "Unexpected number of arguments: expected 1 but got " ++ show (length args)

@@ -131,6 +131,21 @@ instance U.CodegenTopLevel (Ann Ty.Type (P.Stmt Ty.Type)) where
         fn <- U.function (AST.mkName ("__anon_" ++ show count)) [] ir_type blocks
         lift $ U.pushExpr (ty, fn)
         return fn
+    codegenTopLevel (Ann ty (P.ExternStmt extern)) = U.codegenTopLevel extern
+
+instance U.CodegenTopLevel (Ann Ty.Type (P.Extern Ty.Type)) where
+    codegenTopLevel (Ann fn_ty P.Extern {
+        P.ext_name = name,
+        P.ext_args = args,
+        P.ext_ret_ty = ret_ty
+    }) = do
+        let ir_args = map (\(Ann ty arg) ->
+             (arg |> P.arg_name |> AST.mkName, U.irType ty))
+             args
+        let ir_type = ret_ty |> convertType |> U.irType
+        fn <- U.extern (AST.mkName name) ir_args ir_type
+        lift $ U.pushDeclAndImpl name fn_ty (fn_ty, fn)
+        return fn
 
 instance U.CodegenTopLevel (Ann Ty.Type (P.Defn Ty.Type)) where
     codegenTopLevel (Ann ty (P.Op defn)) = U.codegenTopLevel defn
@@ -166,7 +181,7 @@ instance U.CodegenTopLevel (Ann Ty.Type (P.OpDefn Ty.Type)) where
                           |> sequence)
             ret <- U.codegen body
             I.ret ret
-        fn <- U.function (AST.mkName op) ir_args ir_type blocks
+        fn <- U.function (AST.mkName (prefix ++ op)) ir_args ir_type blocks
         return fn
 
 instance U.CodegenTopLevel (Ann Ty.Type (P.FnDefn Ty.Type)) where
@@ -323,7 +338,7 @@ instance U.Codegen (Ann Ty.Type (P.Expr Ty.Type)) where
 
 codegenAST :: P.AST Ty.Type -> AST.Module
 codegenAST stmts =
-    let (defns, exprs) = partition (\(Ann _ stmt) -> P.isDefnStmt stmt) stmts
+    let (exprs, defns) = partition (\(Ann _ stmt) -> P.isExprStmt stmt) stmts
         topLevel = do
             printf <- U.externVarArgs (AST.mkName "printf") [(AST.mkName "fmt", T.ptr T.i8)] T.i32
             doubleFmt <- U.stringPtr "%lf\n" "PRINT_DOUBLE"

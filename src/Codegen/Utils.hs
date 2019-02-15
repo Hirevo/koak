@@ -28,7 +28,7 @@ data Env = Env {
     vars :: [Map.Map Ty.Name (Ty.Type, AST.Operand)],
     decls :: Map.Map Ty.Name FnDecl,
     exprs :: [(Ty.Type, AST.Operand)]
-}
+} deriving (Show, Eq)
 
 newScope, dropScope :: State Env ()
 newScope = modify $ \env -> env { vars = Map.empty : vars env }
@@ -141,7 +141,7 @@ extern nm argtys retty = do
         Glb.parameters  = ([AST.Parameter ty name [] | (name, ty) <- argtys], False),
         Glb.returnType  = retty
     }
-    let funty = T.ptr $ AST.FunctionType retty (map snd argtys) True
+    let funty = T.ptr $ AST.FunctionType retty (map snd argtys) False
     pure $ AST.ConstantOperand $ Cst.GlobalReference funty nm
 
 -- | An external variadic argument function definition
