@@ -3,4 +3,3 @@ def add2(x: int): int
     x + 2;
 
 add2(4);
-

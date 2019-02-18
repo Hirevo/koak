@@ -63,7 +63,7 @@ getImpl name ty = do
         Map.lookup ty $ impls defn
 
 class Codegen a where
-    codegen :: a -> Mn.IRBuilderT (State Env) AST.Operand        
+    codegen :: a -> Mn.IRBuilderT (M.ModuleBuilderT (State Env)) AST.Operand
 
 class CodegenTopLevel a where
     codegenTopLevel :: a -> M.ModuleBuilderT (State Env) AST.Operand
@@ -78,6 +78,7 @@ irType (Ty.TCon (Ty.TC "int")) = int
 irType (Ty.TCon (Ty.TC "double")) = double
 irType (Ty.TCon (Ty.TC "void")) = Codegen.Utils.void
 irType (Ty.TFun _ args ret_ty) = T.FunctionType (irType ret_ty) (args |> map irType) False
+irType ty = error $ show ty
 
 -- | An constant static string pointer
 stringPtr :: M.MonadModuleBuilder m => String -> AST.Name -> m AST.Operand
@@ -166,4 +167,4 @@ mangleType (Ty.TCon (Ty.TC ty)) = [head ty]
 
 mangleFunction :: String -> [Ty.Type] -> Ty.Type -> String
 mangleFunction name args ret_ty =
-    name ++ "_" ++ concatMap mangleType args ++ mangleType ret_ty
+    name ++ "_" ++ concatMap mangleType args ++ "_" ++ mangleType ret_ty

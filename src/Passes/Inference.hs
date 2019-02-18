@@ -104,9 +104,8 @@ instance Infer P.Stmt where
         inferred_args <- fmap (map fromJust) (args |> mapM (\(P.Arg _ name _) -> lift $ getVar name))
         let inferred_ret = P.getExprAnn annotated_body
         lift dropScope
-        tv <- fresh
-        pushConstraint tv (Right (TFun Map.empty inferred_args inferred_ret))
-        return $ P.Defn (TVar tv) defnTy name annotated_args user_ret annotated_body
+        forM (zip user_args inferred_args) $ \(u, TVar i) -> pushConstraint i (Right u)
+        return $ P.Defn inferred_prototype defnTy name annotated_args user_ret annotated_body
     infer (P.Expr range expr) = do
         annotated_expr <- infer expr
         return $ P.Expr (P.getExprAnn annotated_expr) annotated_expr
@@ -278,16 +277,16 @@ apply (TFun constraints t1s t2) t3s | length t1s == length t3s = do
     let ftvMap = zip (constraints |> Map.keys) freshVars
     s_t1s <- forM t1s $ \ty ->
         case ty of
-            TCon _ -> return ty
             TVar v -> case lookup v ftvMap of
                 Just f -> return f
                 Nothing -> return ty
+            _ -> return ty
     s_t2 <- case t2 of
-        TCon _ -> return t2
         TVar v -> case lookup v ftvMap of
             Just f -> return f
             Nothing -> return t2
-    s_t1s |> zip t3s |> mapM (uncurry unify)
+        _ -> return t2
+    forM_ (zip t3s s_t1s) $ \(u, TVar i) -> pushConstraint i (Right u)
     return s_t2
 apply (TFun _ t1s _) t3s =
     throwE $ ArgCountErr $ ArgCountError { expected = length t1s, got = length t3s }
@@ -342,19 +341,16 @@ unify t1@(TVar tv1) t2@(TCon tc2) = do
             env <- get
             error $ "Unexpected unresolved constraint: " ++ show (t1, t2) ++ "\nEnv: " ++ show env
 unify t1@(TCon tc1) t2@(TVar tv2) = do
-    ret <- resolveConstraint (Right t1) (Right t2)
+    cs <- lift $ getConstraints tv2
+    ret <- foldM resolveConstraint (Right t1) cs
     case ret of
         Right ty -> return ty
         Left traits -> do
             env <- get
             error $ "Unexpected unresolved constraint: " ++ show (t1, t2) ++ "\nEnv: " ++ show env
 unify t1@(TVar tv1) t2@(TVar tv2) = do
-    ret <- resolveConstraint (Right t1) (Right t2)
-    case ret of
-        Right ty -> return ty
-        Left traits -> do
-            env <- get
-            error $ "Unexpected unresolved constraint: " ++ show (t1, t2) ++ " " ++ show traits ++ "\nEnv: " ++ show env
+    pushConstraint tv1 (Right t2)
+    return t2
 unify t1 t2 = throwE $ TypeErr $ TypeError { expected = t1, got = t2 }
 
 inferAST :: P.AST a -> (Either Error (P.AST Type), Env)
