@@ -107,12 +107,12 @@ ltInt =
 ltDouble =
     let name = AST.mkName "lt_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
-        ret_ty = U.double
+        ret_ty = U.int
     in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
         entry <- Mn.block `Mn.named` "entry"
         cond <- I.fcmp FPred.OLT a b
-        true <- C.double 1
-        false <- C.double 0
+        true <- C.int64 1
+        false <- C.int64 0
         result <- I.select cond true false
         I.ret result
 
@@ -131,12 +131,12 @@ gtInt =
 gtDouble =
     let name = AST.mkName "gt_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
-        ret_ty = U.double
+        ret_ty = U.int
     in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
         entry <- Mn.block `Mn.named` "entry"
         cond <- I.fcmp FPred.OGT a b
-        true <- C.double 1
-        false <- C.double 0
+        true <- C.int64 1
+        false <- C.int64 0
         result <- I.select cond true false
         I.ret result
 
@@ -155,12 +155,12 @@ eqInt =
 eqDouble =
     let name = AST.mkName "eq_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
-        ret_ty = U.double
+        ret_ty = U.int
     in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
         entry <- Mn.block `Mn.named` "entry"
         cond <- I.fcmp FPred.OEQ a b
-        true <- C.double 1
-        false <- C.double 0
+        true <- C.int64 1
+        false <- C.int64 0
         result <- I.select cond true false
         I.ret result
 
@@ -179,12 +179,12 @@ neqInt =
 neqDouble =
     let name = AST.mkName "neq_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
-        ret_ty = U.double
+        ret_ty = U.int
     in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
         entry <- Mn.block `Mn.named` "entry"
         cond <- I.fcmp FPred.ONE a b
-        true <- C.double 1
-        false <- C.double 0
+        true <- C.int64 1
+        false <- C.int64 0
         result <- I.select cond true false
         I.ret result
 
@@ -223,29 +223,30 @@ invInt =
 invDouble =
     let name = AST.mkName "inv_double"
         params = [(U.double, M.ParameterName "a")]
-        ret_ty = U.double
+        ret_ty = U.int
     in U.inlineFunction name params ret_ty $ \[a] -> mdo
         entry <- Mn.block `Mn.named` "entry"
-        one <- C.double 1
-        zero <- C.double 0
-        cond <- I.fcmp FPred.OEQ a zero
+        one <- C.int64 1
+        zero <- C.int64 0
+        fzero <- C.double 0
+        cond <- I.fcmp FPred.OEQ a fzero
         result <- I.select cond one zero
         I.ret result
 
 defaultInt, defaultDouble :: M.MonadModuleBuilder m => m AST.Operand
 defaultInt =
     let name = AST.mkName "default_int"
-        params = [(U.int, M.ParameterName "a")]
+        params = []
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a] -> mdo
+    in U.inlineFunction name params ret_ty $ \[] -> mdo
         entry <- Mn.block `Mn.named` "entry"
         zero <- C.int64 0
         I.ret zero
 defaultDouble =
     let name = AST.mkName "default_double"
-        params = [(U.double, M.ParameterName "a")]
+        params = []
         ret_ty = U.double
-    in U.inlineFunction name params ret_ty $ \[a] -> mdo
+    in U.inlineFunction name params ret_ty $ \[] -> mdo
         entry <- Mn.block `Mn.named` "entry"
         zero <- C.double 0
         I.ret zero

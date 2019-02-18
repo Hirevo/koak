@@ -13,6 +13,8 @@ import System.IO.Unsafe
 import Data.Char (isSpace)
 import Data.List (sortBy)
 
+import qualified Data.Map as Map
+
 data PrecMap = PrecMap {
     bin_prec :: [(String, Int)],
     un_prec :: [(String, Int)]
@@ -46,9 +48,9 @@ getStmtAnn (Extern a _ _ _) = a
 getStmtAnn (Expr a _) = a
 
 data Expr a =
-    Call a String [Expr a]
-    | Un a String (Expr a)
-    | Bin a String (Expr a) (Expr a)
+    Call a (Ann a String) [Expr a]
+    | Un a (Ann a String) (Expr a)
+    | Bin a (Ann a String) (Expr a) (Expr a)
     | Lit a Literal
     | Ident a String
     | For a (Expr a) (Expr a) (Expr a) (Expr a)
@@ -151,15 +153,26 @@ symbol = pAnyOf "!#$%&*=+<.>/?@\\-^|~"
 dot = pChar '.'
 
 identifier :: Parser String
-identifier = (:)
-    <$> (lower <|> upper <|> pChar '_')
-    <*> many (lower <|> upper <|> digit <|> pChar '_')
+identifier = (:) <$> (lower <|> upper) <*> many (lower <|> upper <|> digit)
 
-typeName :: Parser Type
-typeName =
+primitiveType :: Parser Type
+primitiveType =
     (const Ty.int <$> pString "int")
     <|> (const Ty.double <$> pString "double")
     <|> (const Ty.void <$> pString "void")
+
+functionType :: Parser Type
+functionType = do
+    args <- between
+        (pChar '(')
+        (optSpacing *> pChar ')')
+        (sepBy0 (optSpacing *> pChar ',') (optSpacing *> typeName))
+    optSpacing *> pString "->"
+    ret_ty <- optSpacing *> typeName
+    return $ TFun Map.empty args ret_ty
+
+typeName :: Parser Type
+typeName = primitiveType -- <|> functionType
 
 integer :: Parser Int
 integer = do
@@ -256,11 +269,10 @@ parseBinOp lhs minPrec = do
          (_, prec) <- peek pBinOp
          if prec < minPrec then empty else fallback (fst lhs) $ do
              optSpacing
-             (op, prec) <- pBinOp
+             ((op, prec), op_range) <- withRange pBinOp
              optSpacing
              rhs <- withRange pUnary
              let range = Range{ start = start (snd lhs), end = end (snd rhs) }
-             let expr = Bin range op (fst lhs) (fst rhs)
              let inner rhs' = fallback (fst rhs') $ do
                   optSpacing
                   (_, prec') <- peek pBinOp
@@ -269,10 +281,10 @@ parseBinOp lhs minPrec = do
                      optSpacing
                      rhs <- withRange pBinExpr
                      inner rhs
-             lhs' <- fallback (expr, range) $ do
+             lhs' <- fallback (Bin range (Ann op_range op) (fst lhs) (fst rhs), range) $ do
                 rhs' <- withRange $ inner rhs
                 let range' = Range{ start = start (snd lhs), end = end (snd rhs') }
-                return (Bin range' op (fst lhs) (fst rhs'), range')
+                return (Bin range' (Ann op_range op) (fst lhs) (fst rhs'), range')
              outer lhs' minPrec
     lift $ outer lhs minPrec
 
@@ -288,12 +300,12 @@ unary = do
     precMap <- get
     lift optSpacing
     let p1 = do
-         ((name, rhs), range) <- withRangeT $ do
-             name <- lift $ choice $ map (pString . fst) $ un_prec precMap
+         ((op, op_range, rhs), range) <- withRangeT $ do
+             ((op, _), op_range) <- withRangeT unOp
              lift optSpacing
              rhs <- unary
-             return (name, rhs)
-         return $ Un range name rhs
+             return (op, op_range, rhs)
+         return $ Un range (Ann op_range op) rhs
     p1 <|> postfix
 
 postfix :: KoakParser (Expr Range)
@@ -314,8 +326,8 @@ postfix = do
          return expr
     let primary = ident <|> lit <|> paren
     let callExpr = do
-         ((name, args), range) <- withRangeT $ do
-            name <- lift identifier
+         ((name, name_range, args), range) <- withRangeT $ do
+            (name, name_range) <- lift $ withRange identifier
             lift optSpacing
             args <- do
                lift $ pChar '('
@@ -325,8 +337,8 @@ postfix = do
                lift optSpacing
                lift $ pChar ')'
                return args
-            return (name, args)
-         return $ Call range name args
+            return (name, name_range, args)
+         return $ Call range (Ann name_range name) args
     callExpr <|> primary
 
 argument :: Parser (Arg Range)

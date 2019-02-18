@@ -5,7 +5,7 @@ module Errors where
 import Misc
 import Types
 
-import Data.List (intersperse)
+import Data.List (intercalate)
 
 data Error =
     TypeErr TypeError
@@ -51,7 +51,7 @@ data MultipleDefnError = MultipleDefnError {
 } deriving (Eq)
 instance Show MultipleDefnError where
     show MultipleDefnError { name, definitions } = "MultipleDefnError: '" ++ name ++ "' has multiple definitions:\n"
-        ++ (definitions |> map ((++) "\t- " . show) |> intersperse "\n" |> concat)
+        ++ (definitions |> map ((++) "\t- " . show) |> intercalate "\n")
 data AssignError = AssignError deriving (Eq)
 instance Show AssignError where
     show AssignError =

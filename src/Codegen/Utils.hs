@@ -52,7 +52,7 @@ pushExpr :: (Ty.Type, AST.Operand) -> State Env ()
 pushExpr expr = modify $ \env -> env { exprs = expr : exprs env }
 
 getVar :: Ty.Name -> State Env (Maybe (Ty.Type, AST.Operand))
-getVar name = gets $ \env -> env |> vars |> map (Map.lookup name) |> foldl1 (<|>)
+getVar name = gets $ \env -> env |> vars |> map (Map.lookup name) |> foldl (<|>) Nothing
 getDecl :: Ty.Name -> State Env (Maybe FnDecl)
 getDecl name = gets $ \env -> env |> decls |> Map.lookup name
 getImpl :: Ty.Name -> Ty.Type -> State Env (Maybe AST.Operand)
@@ -77,6 +77,7 @@ irType :: Ty.Type -> T.Type
 irType (Ty.TCon (Ty.TC "int")) = int
 irType (Ty.TCon (Ty.TC "double")) = double
 irType (Ty.TCon (Ty.TC "void")) = Codegen.Utils.void
+irType (Ty.TFun _ args ret_ty) = T.FunctionType (irType ret_ty) (args |> map irType) False
 
 -- | An constant static string pointer
 stringPtr :: M.MonadModuleBuilder m => String -> AST.Name -> m AST.Operand

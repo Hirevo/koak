@@ -7,6 +7,7 @@
 module Codegen.Codegen where
     
 import Misc
+import Annotation
 import Control.Monad.State.Lazy
 import Data.ByteString.Char8 (pack)
 import Data.ByteString.Short (toShort)
@@ -96,28 +97,12 @@ prelude = do
     lift $ U.pushImpl "unary_!" (Ty.TFun Map.empty [Ty.int] Ty.int) invI
     lift $ U.pushImpl "unary_!" (Ty.TFun Map.empty [Ty.double] Ty.int) invD
     lift $ U.pushImpl "default" (Ty.TFun Map.empty [] Ty.int) defI
-    lift $ U.pushImpl "default" (Ty.TFun Map.empty [] Ty.int) defD
-
--- fib :: AST.Module
--- fib = M.buildModule "koak" $ mdo
---     intFmt <- U.stringPtr "%d\n" "PRINT_INT"
---     printf <- U.externVarArgs (AST.mkName "printf") [(AST.mkName "fmt", T.ptr T.i8)] T.i32
---     fib <- M.function (AST.mkName "fibonnacci") [(T.i32, M.ParameterName "n")] T.i32 $ \[n] -> mdo
---         entry <- Mn.block `Mn.named` "entry"
---         I.ret n
---     M.function (AST.mkName "main") [] T.i32 $ \[] -> mdo
---         entry <- Mn.block `Mn.named` "entry"
---         arg <- C.int32 5
---         fibVal <- I.call fib [(arg, [])]
---         I.call printf [(intFmt, []), (fibVal, [])]
---         zero <- C.int32 0
---         I.ret zero
---     return ()
+    lift $ U.pushImpl "default" (Ty.TFun Map.empty [] Ty.double) defD
 
 instance U.Codegen P.Literal where
     codegen a@(P.IntLiteral i) = C.int64 $ fromIntegral i
     codegen a@(P.DoubleLiteral d) = C.double d
-    codegen a@P.VoidLiteral = error "codegen VoidLiteral"
+    codegen a@P.VoidLiteral = error "codegen VoidLiteral not implemented"
 
 instance U.CodegenTopLevel (P.Stmt Ty.Type) where
     codegenTopLevel (P.Defn fn_ty defnTy name args ret_ty body) = mdo
@@ -185,6 +170,7 @@ instance U.Codegen (P.Expr Ty.Type) where
         lift U.dropScope
         I.phi [(val, for_cond_out)]
     codegen (P.If ty cond then_body else_block) = mdo
+        lift U.newScope
         cond_ret <- U.codegen cond
         inv_impl <- lift $ fmap fromJust $ U.getImpl "unary_!" $ Ty.TFun Map.empty [P.getExprAnn cond] Ty.int
         cond_inv <- I.call inv_impl [(cond_ret, [])]
@@ -202,6 +188,7 @@ instance U.Codegen (P.Expr Ty.Type) where
                 if_else_out <- Mn.currentBlock
                 I.br if_end
                 if_end <- Mn.block `Mn.named` "if.end"
+                lift U.dropScope
                 I.phi [(ret_then, if_then_out), (ret_else, if_else_out)]
             Nothing -> mdo
                 I.condBr bool if_then_in if_end
@@ -210,17 +197,18 @@ instance U.Codegen (P.Expr Ty.Type) where
                 if_then_out <- Mn.currentBlock
                 I.br if_end
                 if_end <- Mn.block `Mn.named` "if.end"
+                lift U.dropScope
                 I.phi [(ret_then, if_then_out)]
     codegen (P.While ty cond body) = mdo
         lift U.newScope
         I.br while_cond_in
         entry <- Mn.currentBlock
         while_cond_in <- Mn.block `Mn.named` "while.cond"
-        zero <- C.int64 0
-        val <- I.phi [(zero, entry), (body_ret, while_body_out)]
+        val <- I.phi [(AST.ConstantOperand $ Cst.Null { Cst.constantType = U.irType ty }, entry), (body_ret, while_body_out)]
         cond_ret <- U.codegen cond
         while_cond_out <- Mn.currentBlock
         inv_impl <- lift $ fmap fromJust $ U.getImpl "unary_!" $ Ty.TFun Map.empty [P.getExprAnn cond] Ty.int
+        zero <- C.int64 0
         cond_inv <- I.call inv_impl [(cond_ret, [])]
         bool <- I.icmp IPred.EQ cond_inv zero
         I.condBr bool while_body_in while_end
@@ -229,8 +217,9 @@ instance U.Codegen (P.Expr Ty.Type) where
         while_body_out <- Mn.currentBlock
         I.br while_cond_in
         while_end <- Mn.block `Mn.named` "while.end"
+        lift U.dropScope
         I.phi [(val, while_cond_out)]
-    codegen (P.Call ty name args) = mdo
+    codegen (P.Call ty (Ann _ name) args) = mdo
         maybe_decl <- lift $ U.getDecl name
         let prototype = Ty.TFun Map.empty (map P.getExprAnn args) ty
         let maybe_impl = do
@@ -242,7 +231,7 @@ instance U.Codegen (P.Expr Ty.Type) where
                 gen_args <- args |> mapM U.codegen
                 gen_args |> map (, []) |> I.call impl)
             maybe_impl
-    codegen (P.Bin ty "=" (P.Ident _ name) start) = do
+    codegen (P.Bin ty (Ann _ "=") (P.Ident _ name) start) = do
         maybe_var <- lift $ U.getVar name
         case maybe_var of
             Just (_, var_op) -> do
@@ -255,7 +244,7 @@ instance U.Codegen (P.Expr Ty.Type) where
                 lift $ U.pushVar name ty var
                 I.store var 0 val
                 return val
-    codegen (P.Bin ty name lhs rhs) = mdo
+    codegen (P.Bin ty (Ann _ name) lhs rhs) = mdo
         let prefixed = "binary_" ++ name
         maybe_decl <- lift $ U.getDecl prefixed
         let impl = do
@@ -265,7 +254,7 @@ instance U.Codegen (P.Expr Ty.Type) where
             gen_args <- [lhs, rhs] |> mapM U.codegen
             gen_args |> map (, []) |> I.call impl)
             impl
-    codegen (P.Un ty name rhs) = mdo
+    codegen (P.Un ty (Ann _ name) rhs) = mdo
         maybe_decl <- lift $ U.getDecl ("unary_" ++ name)
         let impl = do
              fun_decl <- maybe_decl
@@ -277,53 +266,17 @@ instance U.Codegen (P.Expr Ty.Type) where
     codegen (P.Ident _ name) = mdo
         found <- lift $ U.getVar name
         maybe
-            (error "Var not found")
+            (do env <- get
+                error $ "Variable " ++ show name ++ " not found: " ++ show env)
             (\(_, op) -> I.load op 0)
             found
     codegen (P.Lit ty lit@(P.IntLiteral i)) = C.int64 $ fromIntegral i
     codegen (P.Lit ty lit@(P.DoubleLiteral d)) = C.double d
     codegen (P.Lit ty lit@P.VoidLiteral) = error "Void literal"
--- resolveTVars :: Map.Map Ty.Type Ty.Type -> (Ty.Type, Ty.Type) -> Map.Map Ty.Type Ty.Type
--- resolveTVars map (t1@(Ty.TVar _), t2) =
---     maybe (Map.insert t1 t2 map)
---         (const map)
---         (Map.lookup t1 map)
--- resolveTVars map _ = map
-
--- instance U.Codegen (Ann Ty.Type (P.CallExpr Ty.Type)) where
---     codegen (Ann ret_ty P.CallExpr {
---         P.call_ident = name,
---         P.call_args = args
---     }) = do
---         maybe_decl <- lift $ U.getDecl name
---         let prototype = Ty.TFun Map.empty (map annotation args) ret_ty
---         let impl = do
---              fun_decl <- maybe_decl
---              Map.lookup prototype $ U.impls fun_decl
---         maybe
---             (error $ "Function " ++ show name ++ " not found: " ++ show prototype)
---             (\decl ->
---                 case Map.lookup prototype $ U.impls decl of
---                     Nothing ->
---                         case U.body of
---                             Just body -> do
---                                 lift U.newScope
---                                 let gen_ty = U.ty decl
---                                 let gen_args = (\(Ty.TFun _ args _) -> args) gen_ty
---                                 let con_args = (\(Ty.TFun _ args _) -> args) prototype
---                                 let vars = foldl resolveTVars Map.empty $ zip gen_args con_args
-
---                                 lift U.dropScope
---                             Nothing -> error $ "Function " ++ show name ++ " not found: " ++ show prototype
---                     Just impl -> do
---                         gen_args <- args |> map U.codegen |> sequence
---                         gen_args |> map (, []) |> I.call impl)
---             maybe_decl
 
 codegenAST :: P.AST Ty.Type -> AST.Module
 codegenAST stmts =
-    let (exprs, defns) = partition P.isExpr stmts
-        topLevel = do
+    let topLevel = do
             printf <- U.externVarArgs (AST.mkName "printf") [(AST.mkName "fmt", T.ptr T.i8)] T.i32
             doubleFmt <- U.stringPtr "%lf\n" "PRINT_DOUBLE"
             intFmt <- U.stringPtr "%ld\n" "PRINT_INT"
@@ -341,8 +294,8 @@ codegenAST stmts =
                 return ()
             lift $ U.pushImpl "print" (Ty.TFun Map.empty [Ty.int] Ty.void) printInt
             prelude
-            mapM_ U.codegenTopLevel (defns ++ reverse exprs)
-            exps <- lift $ gets $ \env -> U.exprs env
+            mapM_ U.codegenTopLevel stmts
+            exps <- lift $ gets $ \env -> env |> U.exprs |> reverse
             blocks <- lift $ Mn.execIRBuilderT Mn.emptyIRBuilder $ do
                 entry <- Mn.block `Mn.named` "entry"
                 forM_ exps $ \(ty, exp) -> do
@@ -367,7 +320,7 @@ codegenAST stmts =
 
 defaultEnv :: U.Env
 defaultEnv = U.Env {
-    U.vars = [],
+    U.vars = [Map.empty],
     U.decls = Map.empty,
     U.exprs = []
 }

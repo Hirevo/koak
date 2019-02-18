@@ -1,0 +1,20 @@
+
+extern putchar(c: int): int;
+
+extern cos(x: double): double;
+extern sin(x: double): double;
+
+extern srand(x: int): int;
+extern rand(): int;
+
+for i = 65, i < 91, i = i + 1 in putchar(i); -- Capital letters
+for i = 97, i < 123, i = i + 1 in putchar(i); -- Non-capital letters
+
+sin(1.0);
+cos(1.0);
+
+srand(5);
+rand();
+rand();
+
+-- while i = 65 do putchar(i);

@@ -16,13 +16,26 @@ import qualified Data.Map as Map
 import qualified Parser.Lang as P
 
 type Scope = Map.Map Name Type
+type Constraints = Map.Map TVar (Either [Trait] Type)
 data Env = Env {
     bin_ops :: Scope,
     un_ops :: Scope,
     fn_defs :: Scope,
-    vars :: [Scope]
+    vars :: [Scope],
+    tvars :: Map.Map TVar (Either [Trait] Type),
+    count :: Int
 } deriving (Show, Eq)
 type Annotated = ExceptT Error (State Env)
+
+letters :: [String]
+letters = [1..] >>= flip replicateM ['a'..'z']
+-- letters = map show [0..]
+
+fresh :: Annotated TVar
+fresh = do
+    c <- gets count
+    modify $ \env -> env { count = c + 1 }
+    return $ TV (letters !! c)
 
 newScope, dropScope :: State Env ()
 newScope = modify $ \env -> env { vars = Map.empty : vars env }
@@ -127,7 +140,7 @@ instance Annotate1 P.Expr where
         let body_ty = P.getExprAnn annotated_body
         lift dropScope
         return $ P.While body_ty annotated_cond annotated_body
-    annotate1 (P.Call range name args) = do
+    annotate1 (P.Call range (Ann _ name) args) = do
         fun_ty <- do
             found <- lift $ gets $ \Env { fn_defs } ->
                 Map.lookup name fn_defs
@@ -138,17 +151,17 @@ instance Annotate1 P.Expr where
         annotated_args <- mapM annotate1 args
         let args_tys = map P.getExprAnn annotated_args
         case apply fun_ty args_tys of
-            Right ty -> return $ P.Call ty name annotated_args
+            Right ty -> return $ P.Call ty (Ann fun_ty name) annotated_args
             Left err -> throwE err
-    annotate1 (P.Bin range "=" lhs rhs) = do
+    annotate1 (P.Bin range (Ann _ "=") lhs rhs) = do
         annotated_rhs <- annotate1 rhs
         let ty = P.getExprAnn annotated_rhs
         case lhs of
             P.Ident range name -> do
                 lift $ pushVar name ty
-                return $ P.Bin ty "=" (P.Ident ty name) annotated_rhs
+                return $ P.Bin ty (Ann (TFun Map.empty [ty] ty) "=") (P.Ident ty name) annotated_rhs
             _ -> throwE $ AssignErr AssignError
-    annotate1 (P.Bin range name lhs rhs) = do
+    annotate1 (P.Bin range (Ann _ name) lhs rhs) = do
         fun_ty <- do
             found <- lift $ gets $ \Env { bin_ops } ->
                 Map.lookup name bin_ops
@@ -159,9 +172,9 @@ instance Annotate1 P.Expr where
         annotated_args <- mapM annotate1 [lhs, rhs]
         let args_tys = map P.getExprAnn annotated_args
         case apply fun_ty args_tys of
-            Right ty -> return $ P.Bin ty name (annotated_args !! 0) (annotated_args !! 1)
+            Right ty -> return $ P.Bin ty (Ann fun_ty name) (annotated_args !! 0) (annotated_args !! 1)
             Left err -> throwE err
-    annotate1 (P.Un range name rhs) = do
+    annotate1 (P.Un range (Ann _ name) rhs) = do
         fun_ty <- do
             found <- lift $ gets $ \Env { un_ops } ->
                 Map.lookup name un_ops
@@ -172,7 +185,7 @@ instance Annotate1 P.Expr where
         annotated_args <- mapM annotate1 [rhs]
         let args_tys = map P.getExprAnn annotated_args
         case apply fun_ty args_tys of
-            Right ty -> return $ P.Un ty name (annotated_args !! 0)
+            Right ty -> return $ P.Un ty (Ann fun_ty name) (annotated_args !! 0)
             Left err -> throwE err
     annotate1 (P.Ident range ident) = do
         found <- lift $ gets $ \Env { bin_ops, un_ops, fn_defs, vars } ->
@@ -187,6 +200,14 @@ instance Annotate1 P.Expr where
         return $ P.Lit T.double lit
     annotate1 (P.Lit range lit@P.VoidLiteral) =
         return $ P.Lit T.void lit
+
+implementsTraits traits ty = forM_ traits $ \trait ->
+    case Map.lookup trait traitsTable of
+        Nothing -> throwE $ TraitNotInScopeErr $ TraitNotInScopeError { trait }
+        Just types ->
+            if notElem ty types
+                then throwE $ NotImplTraitErr $ NotImplTraitError { ty, trait }
+                else return ()
 
 -- TODO: Better document this function (or I won't be able to ever read it again).
 type Apply = ExceptT Error (State (Map.Map TVar (Either [Trait] TCon)))
@@ -225,7 +246,7 @@ apply :: Type -> [Type] -> Either Error Type
 apply (TFun tvars t1s t2) t3s | length t1s == length t3s = do
     let zipped = zip t1s t3s
     (unified, scope) <- tvars |> Map.map Left
-                              |> (zipped |> mapM apply' |> runExceptT |> runState)
+                              |> (zipped |> map apply' |> sequence |> runExceptT |> runState)
                               |> \(out, state) -> do { out' <- out ; return (out', state) }
     case t2 of
         TVar got@(TV name) -> maybe
@@ -250,5 +271,7 @@ defaultEnv = Env {
     bin_ops = T.builtinBinaryOps,
     un_ops = T.builtinUnaryOps,
     fn_defs = T.builtinFunctions,
-    vars = []
+    vars = [],
+    tvars = Map.empty,
+    count = 0
 }

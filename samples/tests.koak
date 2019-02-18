@@ -19,6 +19,8 @@ extern putchar(c: int): int;
 for c = 65, c < 91, c = c + 1
     in c = default();
 
+5 <-> default();
+
 -- while 1 do 5.0;
 
 -- test(!0, 0.2, 0.3);

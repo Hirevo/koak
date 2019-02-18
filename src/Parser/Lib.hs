@@ -204,4 +204,4 @@ pAnyOf :: String -> Parser Char
 pAnyOf = choice . map pChar
 
 pString :: String -> Parser String
-pString = sequence . map pChar
+pString = mapM pChar

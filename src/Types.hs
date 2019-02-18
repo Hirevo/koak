@@ -1,6 +1,9 @@
 module Types where
 
-import Data.List (intersperse, find)
+import Misc
+
+import Data.List (intercalate, find)
+
 import qualified Data.Map as Map
 
 type Name = String
@@ -21,12 +24,10 @@ newtype TVar =
 instance Show TVar where
     show (TV var) = var
 
-type Constraints = Map.Map TVar [Trait]
-
 data Type =
     TCon TCon
     | TVar TVar
-    | TFun Constraints [Type] Type
+    | TFun (Map.Map TVar [Trait]) [Type] Type
     deriving (Eq, Ord)
 instance Show Type where
     show (TCon ty) = show ty
@@ -36,10 +37,16 @@ instance Show Type where
              (var, traits) <- Map.toList constraints
              if null traits
                  then return $ show var
-                 else return $ show var ++ ": " ++ concat (intersperse " + " $ map show traits)
-            vars_decl = if null vars then "" else "<" ++ concat (intersperse ", " vars) ++ ">"
-        in vars_decl ++ "(" ++ concat (intersperse ", " $ map show args) ++ ") -> "
+                 else return $ show var ++ ": " ++ (traits |> map show |> intercalate " + ")
+            vars_decl = if null vars then "" else "<" ++ (vars |> intercalate ", ") ++ ">"
+        in vars_decl ++ "(" ++ (args |> map show |> intercalate ", ") ++ ") -> "
             ++ show ret
+isTVar :: Type -> Bool
+isTVar (TVar _) = True
+isTVar _ = False
+getFuncReturnType :: Type -> Type
+getFuncReturnType (TFun _ _ ty) = ty
+getFuncReturnType _ = error "Asked for the return type of not a function"
 
 newtype Trait =
     Trait Name
@@ -48,9 +55,11 @@ instance Show Trait where
     show (Trait name) = name
 
 traitsTable :: Map.Map Trait [TCon]
-traitsTable = Map.fromList [ (Trait "Num", [TC "int", TC "double"])
-                           , (Trait "Eq",  [TC "int", TC "double", TC "void"])
-                           , (Trait "Ord", [TC "int", TC "double"]) ]
+traitsTable = Map.fromList [ (Trait "Num", [TC "int", TC "double"]),
+                             (Trait "Integral", [TC "int"]),
+                             (Trait "Fractional", [TC "double"]),
+                             (Trait "Eq", [TC "int", TC "double"]),
+                             (Trait "Ord", [TC "int", TC "double"]) ]
 
 builtinBinaryOps :: Map.Map Name Type
 builtinBinaryOps = Map.fromList [
