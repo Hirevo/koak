@@ -16,7 +16,7 @@ import Codegen.Codegen (codegenAST)
 import System.Environment (getArgs)
 import Data.Text.Lazy (toStrict, unpack)
 import LLVM.Pretty (ppllvm)
-import Data.List (intersperse)
+import Data.List (intercalate)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Error (ioeGetErrorString, userError, ioError, catchIOError)
 import Foreign.Ptr (FunPtr, castFunPtr)
@@ -28,6 +28,7 @@ import qualified LLVM.ExecutionEngine as EE
 import qualified LLVM.Context as Ctx
 import qualified LLVM.AST as AST
 import qualified LLVM.Module as Mdl
+import qualified LLVM.PassManager as Pm
 import qualified LLVM.Target as Tgt
 import qualified System.Process as Pcs
 
@@ -36,10 +37,10 @@ foreign import ccall "dynamic" haskFun :: FunPtr (IO Int) -> IO Int
 run :: FunPtr a -> IO Int
 run fn = haskFun (castFunPtr fn :: FunPtr (IO Int))
 
-jit :: Ctx.Context -> (EE.MCJIT -> IO a) -> IO a
-jit c = EE.withMCJIT c optlevel model ptrelim fastins
+withJIT :: Ctx.Context -> (EE.MCJIT -> IO a) -> IO a
+withJIT ctx = EE.withMCJIT ctx optlevel model ptrelim fastins
     where
-        optlevel = Just 2
+        optlevel = Just 3
         model    = Nothing
         ptrelim  = Nothing
         fastins  = Nothing
@@ -70,27 +71,31 @@ main = flip catchIOError (\err -> do
                     -- putStrLn "AST:"
                     -- putStrLn (show ast)
                     -- putStrLn ""
+                    -- case ast |> inferAST of
+                    --     (Left err, env) -> (show err ++ "\nEnv: " ++ show env) |> fail
+                    --     (Right types, env) -> (show types ++ "\nEnv: " ++ show env) |> putStrLn
+                    --     -- Left err -> err |> show |> fail
+                    --     -- Right types -> types |> show |> putStrLn
                     case ast |> annotateAST of
                         Left err -> err |> show |> fail
                         Right types -> -- do
                             -- putStrLn "Type-checked successfully !"
                             -- putStrLn "Expression types:"
                             -- types |> map (show . annotation)
-                            --       |> intersperse "\n"
-                            --       |> concat
+                            --       |> intercalate "\n"
                             --       |> putStrLn
                             Ctx.withContext $ \ctx -> do
                                 let mod = codegenAST types
                                 -- mod |> ppllvm |> unpack |> putStrLn
+                                -- mod |> ppllvm |> unpack |> writeFile "out.ll"
                                 Mdl.withModuleFromAST ctx mod $ \mod' ->
-                                    jit ctx $ \ecjit -> EE.withModuleInEngine ecjit mod' $ \ee -> do
+                                    withJIT ctx $ \ecjit -> EE.withModuleInEngine ecjit mod' $ \ee -> do
                                         mainfn <- EE.getFunction ee (AST.mkName "main")
                                         case mainfn of
                                             Just fn -> Control.Monad.void $ run fn
                                             Nothing -> return ()
-                                        Tgt.withHostTargetMachine $ \tgt ->
-                                            Mdl.writeObjectToFile tgt (Mdl.File "out.o") mod'
-                                mod |> ppllvm |> unpack |> writeFile "out.ll"
-                                Pcs.callCommand "cc out.o -lm"
+                                        -- Tgt.withHostTargetMachine $ \tgt ->
+                                        --     Mdl.writeObjectToFile tgt (Mdl.File "out.o") mod'
+                                -- Pcs.callCommand "cc -O3 out.ll -lm"
                 err -> err |> show |> fail
         _ -> fail $ "Unexpected number of arguments: expected 1 but got " ++ show (length args)

@@ -1,5 +1,5 @@
 
-def unary ! 10 (x: int): int
+def unary !! 10 (x: int): int
     if x then 0 else 1;
 
 def test(x: int, y: double, z: double): double
@@ -8,5 +8,18 @@ def test(x: int, y: double, z: double): double
 def binary <-> 10 (x: int, y: int): int
     x + y;
 
-test(!0, 0.2, 0.3);
-!!(0 <-> 3);
+def binary ^ 60 (x: int, y: int): int
+    for i = 0, i < y, i = i + 1
+        in x = x + 1;
+
+2 ^ 4;
+
+extern putchar(c: int): int;
+
+for c = 65, c < 91, c = c + 1
+    in c = default();
+
+-- while 1 do 5.0;
+
+-- test(!0, 0.2, 0.3);
+-- !!(5 <-> 3);

@@ -14,7 +14,6 @@ def binary <-> 10 (x: int, y: int): int
     x + y;
 
 5 <-> 9;
-
 sin(1.0);
 cos(1.0);
 fib(10);

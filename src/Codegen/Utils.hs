@@ -3,12 +3,14 @@
 module Codegen.Utils where
 
 import Misc
+import Annotation
 import Control.Monad.State.Lazy
 import Control.Applicative
 
 import Data.Char (ord)
 
 import qualified Types as Ty
+import qualified Parser.Lang as P
 import qualified LLVM.AST as AST
 import qualified LLVM.AST.Constant as Cst
 import qualified LLVM.AST.FunctionAttribute as FnAttr
@@ -22,6 +24,7 @@ import qualified Data.Map as Map
 
 data FnDecl = FnDecl {
     ty :: Ty.Type,
+    body :: Maybe (P.Stmt Ty.Type),
     impls :: Map.Map Ty.Type AST.Operand
 } deriving (Show, Eq)
 data Env = Env {
@@ -34,12 +37,12 @@ newScope, dropScope :: State Env ()
 newScope = modify $ \env -> env { vars = Map.empty : vars env }
 dropScope = modify $ \env -> env { vars = tail $ vars env }
 
-pushDecl :: Ty.Name -> Ty.Type -> State Env ()
-pushDecl name ty = modify $ \env -> env { decls = Map.insert name FnDecl{ ty, impls = Map.empty } $ decls env }
+pushDecl :: Ty.Name -> Ty.Type -> Maybe (P.Stmt Ty.Type) -> State Env ()
+pushDecl name ty body = modify $ \env -> env { decls = Map.insert name FnDecl{ ty, body, impls = Map.empty } $ decls env }
 pushImpl :: Ty.Name -> Ty.Type -> AST.Operand -> State Env ()
 pushImpl name ty op = modify $ \env -> env { decls = Map.adjust (\elem -> elem { impls = Map.insert ty op $ impls elem }) name $ decls env }
 pushDeclAndImpl :: Ty.Name -> Ty.Type -> (Ty.Type, AST.Operand) -> State Env ()
-pushDeclAndImpl name ty (impl_ty, op) = modify $ \env -> env { decls = Map.insert name FnDecl{ ty, impls = Map.singleton impl_ty op } $ decls env }
+pushDeclAndImpl name ty (impl_ty, op) = modify $ \env -> env { decls = Map.insert name FnDecl{ ty, body = Nothing, impls = Map.singleton impl_ty op } $ decls env }
 pushVar :: Ty.Name -> Ty.Type -> AST.Operand -> State Env ()
 pushVar name ty operand = modify $ \env ->
     if null $ vars env

@@ -231,3 +231,21 @@ invDouble =
         cond <- I.fcmp FPred.OEQ a zero
         result <- I.select cond one zero
         I.ret result
+
+defaultInt, defaultDouble :: M.MonadModuleBuilder m => m AST.Operand
+defaultInt =
+    let name = AST.mkName "default_int"
+        params = [(U.int, M.ParameterName "a")]
+        ret_ty = U.int
+    in U.inlineFunction name params ret_ty $ \[a] -> mdo
+        entry <- Mn.block `Mn.named` "entry"
+        zero <- C.int64 0
+        I.ret zero
+defaultDouble =
+    let name = AST.mkName "default_double"
+        params = [(U.double, M.ParameterName "a")]
+        ret_ty = U.double
+    in U.inlineFunction name params ret_ty $ \[a] -> mdo
+        entry <- Mn.block `Mn.named` "entry"
+        zero <- C.double 0
+        I.ret zero

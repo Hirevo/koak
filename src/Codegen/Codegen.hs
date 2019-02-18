@@ -1,18 +1,16 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 module Codegen.Codegen where
     
 import Misc
-import Annotation
 import Control.Monad.State.Lazy
 import Data.ByteString.Char8 (pack)
 import Data.ByteString.Short (toShort)
 
-import Data.Char (ord)
 import Data.List (partition)
 import Data.Maybe (fromJust)
 
@@ -22,23 +20,14 @@ import qualified Codegen.Prelude as Pre
 import qualified Codegen.Utils as U
 import qualified LLVM.AST as AST
 import qualified LLVM.AST.IntegerPredicate as IPred
-import qualified LLVM.AST.FloatingPointPredicate as FPred
-import qualified LLVM.AST.Constant as Cst
-import qualified LLVM.AST.Global as Glb
-import qualified LLVM.AST.Linkage as Lnk
 import qualified LLVM.AST.Type as T
+import qualified LLVM.AST.Constant as Cst
 import qualified LLVM.AST.Operand as Op
-import qualified LLVM.AST.Typed as Tpd
 import qualified LLVM.IRBuilder.Constant as C
 import qualified LLVM.IRBuilder.Instruction as I
 import qualified LLVM.IRBuilder.Module as M
 import qualified LLVM.IRBuilder.Monad as Mn
 import qualified Data.Map as Map
-
-convertType :: P.Type -> Ty.Type
-convertType ty | ty == P.IntType = Ty.int
-convertType ty | ty == P.FloatType = Ty.float
-convertType ty | ty == P.VoidType = Ty.void
 
 prelude :: M.ModuleBuilderT (State U.Env) ()
 prelude = do
@@ -62,41 +51,52 @@ prelude = do
     negD <- Pre.negDouble
     invI <- Pre.invInt
     invD <- Pre.invDouble
+    defI <- Pre.defaultInt
+    defD <- Pre.defaultDouble
     let ty1 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Num"])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "T"] (Ty.TVar $ Ty.TV "T")
     let ty2 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Ord"])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "T"] Ty.int
     let ty3 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Eq"])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "T"] Ty.int
-    let ty4 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Num"])]) [Ty.TVar $ Ty.TV "T"] (Ty.TVar $ Ty.TV "T")
-    let ty5 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Eq"])]) [Ty.TVar $ Ty.TV "T"] Ty.int
-    lift $ U.pushDecl "binary_+" ty1
-    lift $ U.pushDecl "binary_-" ty1
-    lift $ U.pushDecl "binary_*" ty1
-    lift $ U.pushDecl "binary_/" ty1
-    lift $ U.pushDecl "binary_<" ty2
-    lift $ U.pushDecl "binary_>" ty2
-    lift $ U.pushDecl "binary_==" ty3
-    lift $ U.pushDecl "binary_!=" ty3
-    lift $ U.pushDecl "unary_-" ty4
-    lift $ U.pushDecl "unary_!" ty5
+    let ty4 = Ty.TFun (Map.fromList [(Ty.TV "T", []), (Ty.TV "U", [])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "U"] (Ty.TVar $ Ty.TV "U")
+    let ty5 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Num"])]) [Ty.TVar $ Ty.TV "T"] (Ty.TVar $ Ty.TV "T")
+    let ty6 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Eq"])]) [Ty.TVar $ Ty.TV "T"] Ty.int
+    let ty7 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Default"])]) [] (Ty.TVar $ Ty.TV "T")
+    lift $ U.pushDecl "binary_+" ty1 Nothing
+    lift $ U.pushDecl "binary_-" ty1 Nothing
+    lift $ U.pushDecl "binary_*" ty1 Nothing
+    lift $ U.pushDecl "binary_/" ty1 Nothing
+    lift $ U.pushDecl "binary_<" ty2 Nothing
+    lift $ U.pushDecl "binary_>" ty2 Nothing
+    lift $ U.pushDecl "binary_==" ty3 Nothing
+    lift $ U.pushDecl "binary_!=" ty3 Nothing
+    lift $ U.pushDecl "binary_:" ty4 (Just (P.Defn ty4 P.Binary "binary_:" 
+        [ P.Arg (Ty.TVar $ Ty.TV "T") "a" (Ty.TVar $ Ty.TV "T"), P.Arg (Ty.TVar $ Ty.TV "T") "b" (Ty.TVar $ Ty.TV "U") ]
+        (Ty.TVar $ Ty.TV "U")
+        (P.Ident (Ty.TVar $ Ty.TV "U") "b")))
+    lift $ U.pushDecl "unary_-" ty5 Nothing
+    lift $ U.pushDecl "unary_!" ty6 Nothing
+    lift $ U.pushDecl "default" ty7 Nothing
     lift $ U.pushImpl "binary_+" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) addI
-    lift $ U.pushImpl "binary_+" (Ty.TFun Map.empty [Ty.float, Ty.float] Ty.float) addD
+    lift $ U.pushImpl "binary_+" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) addD
     lift $ U.pushImpl "binary_-" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) subI
-    lift $ U.pushImpl "binary_-" (Ty.TFun Map.empty [Ty.float, Ty.float] Ty.float) subD
+    lift $ U.pushImpl "binary_-" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) subD
     lift $ U.pushImpl "binary_*" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) multI
-    lift $ U.pushImpl "binary_*" (Ty.TFun Map.empty [Ty.float, Ty.float] Ty.float) multD
+    lift $ U.pushImpl "binary_*" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) multD
     lift $ U.pushImpl "binary_/" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) divI
-    lift $ U.pushImpl "binary_/" (Ty.TFun Map.empty [Ty.float, Ty.float] Ty.float) divD
+    lift $ U.pushImpl "binary_/" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) divD
     lift $ U.pushImpl "binary_<" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) ltI
-    lift $ U.pushImpl "binary_<" (Ty.TFun Map.empty [Ty.float, Ty.float] Ty.int) ltD
+    lift $ U.pushImpl "binary_<" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) ltD
     lift $ U.pushImpl "binary_>" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) gtI
-    lift $ U.pushImpl "binary_>" (Ty.TFun Map.empty [Ty.float, Ty.float] Ty.int) gtD
+    lift $ U.pushImpl "binary_>" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) gtD
     lift $ U.pushImpl "binary_==" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) eqI
-    lift $ U.pushImpl "binary_==" (Ty.TFun Map.empty [Ty.float, Ty.float] Ty.int) eqD
+    lift $ U.pushImpl "binary_==" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) eqD
     lift $ U.pushImpl "binary_!=" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) neqI
-    lift $ U.pushImpl "binary_!=" (Ty.TFun Map.empty [Ty.float, Ty.float] Ty.int) neqD
+    lift $ U.pushImpl "binary_!=" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) neqD
     lift $ U.pushImpl "unary_-" (Ty.TFun Map.empty [Ty.int] Ty.int) negI
-    lift $ U.pushImpl "unary_-" (Ty.TFun Map.empty [Ty.float] Ty.float) negD
+    lift $ U.pushImpl "unary_-" (Ty.TFun Map.empty [Ty.double] Ty.double) negD
     lift $ U.pushImpl "unary_!" (Ty.TFun Map.empty [Ty.int] Ty.int) invI
-    lift $ U.pushImpl "unary_!" (Ty.TFun Map.empty [Ty.float] Ty.int) invD
+    lift $ U.pushImpl "unary_!" (Ty.TFun Map.empty [Ty.double] Ty.int) invD
+    lift $ U.pushImpl "default" (Ty.TFun Map.empty [] Ty.int) defI
+    lift $ U.pushImpl "default" (Ty.TFun Map.empty [] Ty.int) defD
 
 -- fib :: AST.Module
 -- fib = M.buildModule "koak" $ mdo
@@ -114,14 +114,37 @@ prelude = do
 --         I.ret zero
 --     return ()
 
-instance U.Codegen (Ann Ty.Type P.Literal) where
-    codegen (Ann _ a@(P.IntLiteral i)) = C.int64 $ fromIntegral i
-    codegen (Ann _ a@(P.FloatLiteral d)) = C.double $ realToFrac d
-    codegen (Ann _ a@P.VoidLiteral) = error "codegen VoidLiteral"
+instance U.Codegen P.Literal where
+    codegen a@(P.IntLiteral i) = C.int64 $ fromIntegral i
+    codegen a@(P.DoubleLiteral d) = C.double d
+    codegen a@P.VoidLiteral = error "codegen VoidLiteral"
 
-instance U.CodegenTopLevel (Ann Ty.Type (P.Stmt Ty.Type)) where
-    codegenTopLevel (Ann ty (P.DefnStmt defn)) = U.codegenTopLevel defn
-    codegenTopLevel (Ann ty (P.ExprStmt expr)) = do
+instance U.CodegenTopLevel (P.Stmt Ty.Type) where
+    codegenTopLevel (P.Defn fn_ty defnTy name args ret_ty body) = mdo
+        let final_name = case defnTy of
+             P.Function -> name
+             P.Unary -> "unary_" ++ name
+             P.Binary -> "binary_" ++ name
+        let ir_args = map (\(P.Arg ty name _) -> (AST.mkName name, U.irType ty)) args
+        let ir_type = ret_ty |> U.irType
+        lift $ U.pushDeclAndImpl final_name fn_ty (fn_ty, fn)
+        blocks <- lift $ Mn.execIRBuilderT Mn.emptyIRBuilder $ do
+            entry <- Mn.block `Mn.named` "entry"
+            op_args <- forM args $ \(P.Arg ty name _) -> do
+                arg <- I.alloca (U.irType ty) Nothing 0
+                name <- Mn.fresh `Mn.named` toShort (pack name)
+                let ref = Op.LocalReference (U.irType ty) name
+                I.store arg 0 ref
+                return arg
+            let names = map (\(P.Arg _ name _) -> name) args
+            let types = map P.getArgAnn args
+            lift (op_args |> zip3 names types
+                          |> mapM (\(name, ty, arg) -> U.pushVar name ty arg))
+            ret <- U.codegen body
+            I.ret ret
+        fn <- U.function (AST.mkName final_name) ir_args ir_type blocks
+        return fn
+    codegenTopLevel (P.Expr ty expr) = do
         let ir_type = U.irType ty
         blocks <- lift $ Mn.execIRBuilderT Mn.emptyIRBuilder $ do
             entry <- Mn.block `Mn.named` "entry"
@@ -131,103 +154,39 @@ instance U.CodegenTopLevel (Ann Ty.Type (P.Stmt Ty.Type)) where
         fn <- U.function (AST.mkName ("__anon_" ++ show count)) [] ir_type blocks
         lift $ U.pushExpr (ty, fn)
         return fn
-    codegenTopLevel (Ann ty (P.ExternStmt extern)) = U.codegenTopLevel extern
-
-instance U.CodegenTopLevel (Ann Ty.Type (P.Extern Ty.Type)) where
-    codegenTopLevel (Ann fn_ty P.Extern {
-        P.ext_name = name,
-        P.ext_args = args,
-        P.ext_ret_ty = ret_ty
-    }) = do
-        let ir_args = map (\(Ann ty arg) ->
-             (arg |> P.arg_name |> AST.mkName, U.irType ty))
-             args
-        let ir_type = ret_ty |> convertType |> U.irType
+    codegenTopLevel (P.Extern fn_ty name args ret_ty) = do
+        let ir_args = map (\(P.Arg ty name _) -> (AST.mkName name, U.irType ty)) args
+        let ir_type = U.irType ret_ty
         fn <- U.extern (AST.mkName name) ir_args ir_type
         lift $ U.pushDeclAndImpl name fn_ty (fn_ty, fn)
         return fn
 
-instance U.CodegenTopLevel (Ann Ty.Type (P.Defn Ty.Type)) where
-    codegenTopLevel (Ann ty (P.Op defn)) = U.codegenTopLevel defn
-    codegenTopLevel (Ann ty (P.Fn defn)) = U.codegenTopLevel defn
-
-instance U.CodegenTopLevel (Ann Ty.Type (P.OpDefn Ty.Type)) where
-    codegenTopLevel (Ann fn_ty P.OpDefn {
-        P.opdefn_op = op,
-        P.opdefn_arity = arity,
-        P.opdefn_args = args,
-        P.opdefn_ret_ty = ret_ty,
-        P.opdefn_body = body
-    }) = mdo
-        let ir_args = map (\(Ann ty arg) ->
-             let irTy = U.irType ty
-                 name = arg |> P.arg_name |> AST.mkName
-             in (name, irTy)) args
-        let ret_ty2 = ret_ty |> convertType
-        let ir_type = ret_ty2 |> U.irType
-        let prefix = case arity of
-             P.Unary -> "unary_"
-             P.Binary -> "binary_"
-        lift $ U.pushDeclAndImpl (prefix ++ op) fn_ty (fn_ty, fn)
-        blocks <- lift $ Mn.execIRBuilderT Mn.emptyIRBuilder $ do
-            op_args <- forM args $ \(Ann ty arg) -> do
-                v <- Mn.fresh `Mn.named` toShort (pack $ P.arg_name arg)
-                return $ Op.LocalReference (U.irType ty) v
-            entry <- Mn.block `Mn.named` "entry"
-            let names = map (\(Ann _ arg) -> P.arg_name arg) args
-            let types = map annotation args
-            lift (op_args |> zip3 names types
-                          |> map (\(name, ty, arg) -> U.pushVar name ty arg)
-                          |> sequence)
-            ret <- U.codegen body
-            I.ret ret
-        fn <- U.function (AST.mkName (prefix ++ op)) ir_args ir_type blocks
-        return fn
-
-instance U.CodegenTopLevel (Ann Ty.Type (P.FnDefn Ty.Type)) where
-    codegenTopLevel (Ann fn_ty P.FnDefn {
-        P.fndefn_name = name,
-        P.fndefn_args = args,
-        P.fndefn_ret_ty = ret_ty,
-        P.fndefn_body = body
-    }) = mdo
-        let ir_args = map (\(Ann ty arg) ->
-             (arg |> P.arg_name |> AST.mkName, U.irType ty))
-             args
-        let ret_ty2 = ret_ty |> convertType
-        let ir_type = ret_ty2 |> U.irType
-        lift $ U.pushDeclAndImpl name fn_ty (fn_ty, fn)
-        blocks <- lift $ Mn.execIRBuilderT Mn.emptyIRBuilder $ do
-            op_args <- forM args $ \(Ann ty arg) -> do
-                v <- Mn.fresh `Mn.named` toShort (pack $ P.arg_name arg)
-                return $ Op.LocalReference (U.irType ty) v
-            entry <- Mn.block `Mn.named` "entry"
-            let names = map (\(Ann _ arg) -> P.arg_name arg) args
-            let types = map annotation args
-            lift (op_args |> zip3 names types
-                          |> map (\(name, ty, arg) -> U.pushVar name ty arg)
-                          |> sequence)
-            ret <- U.codegen body
-            I.ret ret
-        fn <- U.function (AST.mkName name) ir_args ir_type blocks
-        return fn
-
-instance U.Codegen (Ann Ty.Type (P.ForExpr Ty.Type)) where
-    codegen (Ann ty P.ForExpr {
-        P.for_init = init,
-        P.for_cond = cond,
-        P.for_oper = oper,
-        P.for_body = body
-    }) = error "Not implemented"
-
-instance U.Codegen (Ann Ty.Type (P.IfExpr Ty.Type)) where
-    codegen (Ann _ P.IfExpr {
-        P.if_cond = cond,
-        P.if_then = then_body,
-        P.if_else = else_block
-    }) = mdo
+instance U.Codegen (P.Expr Ty.Type) where
+    codegen (P.For ty start cond oper body) = mdo
+        lift U.newScope
+        start_ret <- U.codegen start
+        I.br for_cond_in
+        entry <- Mn.currentBlock
+        for_cond_in <- Mn.block `Mn.named` "for.cond"
+        val <- I.phi [(start_ret, entry), (body_ret, for_body_out)]
         cond_ret <- U.codegen cond
-        inv_impl <- lift $ fmap fromJust $ U.getImpl "unary_!" $ Ty.TFun Map.empty [annotation cond] Ty.int
+        for_cond_out <- Mn.currentBlock
+        inv_impl <- lift $ fmap fromJust $ U.getImpl "unary_!" $ Ty.TFun Map.empty [P.getExprAnn cond] Ty.int
+        cond_inv <- I.call inv_impl [(cond_ret, [])]
+        zero <- C.int64 0
+        bool <- I.icmp IPred.EQ cond_inv zero
+        I.condBr bool for_body_in for_end
+        for_body_in <- Mn.block `Mn.named` "for.body"
+        body_ret <- U.codegen body
+        oper_ret <- U.codegen oper
+        for_body_out <- Mn.currentBlock
+        I.br for_cond_in
+        for_end <- Mn.block `Mn.named` "for.end"
+        lift U.dropScope
+        I.phi [(val, for_cond_out)]
+    codegen (P.If ty cond then_body else_block) = mdo
+        cond_ret <- U.codegen cond
+        inv_impl <- lift $ fmap fromJust $ U.getImpl "unary_!" $ Ty.TFun Map.empty [P.getExprAnn cond] Ty.int
         cond_inv <- I.call inv_impl [(cond_ret, [])]
         zero <- C.int64 0
         bool <- I.icmp IPred.EQ cond_inv zero
@@ -252,105 +211,130 @@ instance U.Codegen (Ann Ty.Type (P.IfExpr Ty.Type)) where
                 I.br if_end
                 if_end <- Mn.block `Mn.named` "if.end"
                 I.phi [(ret_then, if_then_out)]
-
-instance U.Codegen (Ann Ty.Type (P.WhileExpr Ty.Type)) where
-    codegen (Ann ty P.WhileExpr {
-        P.while_cond = (Ann _ cond),
-        P.while_body = (Ann _ body)
-    }) = error "Not implemented"
-
-instance U.Codegen (Ann Ty.Type (P.CallExpr Ty.Type)) where
-    codegen (Ann ret_ty P.CallExpr {
-        P.call_ident = name,
-        P.call_args = args
-    }) = do
+    codegen (P.While ty cond body) = mdo
+        lift U.newScope
+        I.br while_cond_in
+        entry <- Mn.currentBlock
+        while_cond_in <- Mn.block `Mn.named` "while.cond"
+        zero <- C.int64 0
+        val <- I.phi [(zero, entry), (body_ret, while_body_out)]
+        cond_ret <- U.codegen cond
+        while_cond_out <- Mn.currentBlock
+        inv_impl <- lift $ fmap fromJust $ U.getImpl "unary_!" $ Ty.TFun Map.empty [P.getExprAnn cond] Ty.int
+        cond_inv <- I.call inv_impl [(cond_ret, [])]
+        bool <- I.icmp IPred.EQ cond_inv zero
+        I.condBr bool while_body_in while_end
+        while_body_in <- Mn.block `Mn.named` "while.body"
+        body_ret <- U.codegen body
+        while_body_out <- Mn.currentBlock
+        I.br while_cond_in
+        while_end <- Mn.block `Mn.named` "while.end"
+        I.phi [(val, while_cond_out)]
+    codegen (P.Call ty name args) = mdo
         maybe_decl <- lift $ U.getDecl name
-        let prototype = Ty.TFun Map.empty (map annotation args) ret_ty
-        let impl = do
+        let prototype = Ty.TFun Map.empty (map P.getExprAnn args) ty
+        let maybe_impl = do
              fun_decl <- maybe_decl
              Map.lookup prototype $ U.impls fun_decl
         maybe
             (error $ "Function " ++ show name ++ " not found: " ++ show prototype)
             (\impl -> do
-                gen_args <- args |> map U.codegen |> sequence
+                gen_args <- args |> mapM U.codegen
                 gen_args |> map (, []) |> I.call impl)
-            impl
-
-instance U.Codegen (Ann Ty.Type (P.BinExpr Ty.Type)) where
-    codegen (Ann ty P.BinExpr {
-        P.bin_op = "=",
-        P.bin_lhs = Ann _ lhs,
-        P.bin_rhs = Ann _ rhs
-    }) = error "Not implemented"
-        -- annotated_rhs <- U.codegen rhs
-        -- let ty = annotation annotated_rhs
-        -- case lhs of
-        --     P.Ident (Ann _ name) -> do
-        --         lift $ pushVar name ty
-        --         return $ Ann ty $ P.BinExpr {
-        --             P.bin_op = "=",
-        --             P.bin_lhs = Ann ty $ P.Ident $ Ann ty name,
-        --             P.bin_rhs = annotated_rhs
-        --         }
-        --     _ -> throwE $ AssignErr AssignError
-    codegen (Ann ret_ty P.BinExpr {
-        P.bin_op = name,
-        P.bin_lhs = Ann lhs_ty lhs,
-        P.bin_rhs = Ann rhs_ty rhs
-    }) = do
-        maybe_decl <- lift $ U.getDecl ("binary_" ++ name)
+            maybe_impl
+    codegen (P.Bin ty "=" (P.Ident _ name) start) = do
+        maybe_var <- lift $ U.getVar name
+        case maybe_var of
+            Just (_, var_op) -> do
+                val <- U.codegen start
+                I.store var_op 0 val
+                return val
+            Nothing -> do
+                val <- U.codegen start
+                var <- I.alloca (U.irType ty) Nothing 0
+                lift $ U.pushVar name ty var
+                I.store var 0 val
+                return val
+    codegen (P.Bin ty name lhs rhs) = mdo
+        let prefixed = "binary_" ++ name
+        maybe_decl <- lift $ U.getDecl prefixed
         let impl = do
              fun_decl <- maybe_decl
-             Map.lookup (Ty.TFun Map.empty [lhs_ty, rhs_ty] ret_ty) $ U.impls fun_decl
-        maybe (error "Function not found") (\impl -> do
-            gen_args <- [Ann lhs_ty lhs, Ann rhs_ty rhs] |> map U.codegen |> sequence
+             Map.lookup (Ty.TFun Map.empty [P.getExprAnn lhs, P.getExprAnn rhs] ty) $ U.impls fun_decl
+        maybe (error $ "Function " ++ show prefixed ++ " not found") (\impl -> do
+            gen_args <- [lhs, rhs] |> mapM U.codegen
             gen_args |> map (, []) |> I.call impl)
             impl
-
-instance U.Codegen (Ann Ty.Type (P.UnExpr Ty.Type)) where
-    codegen (Ann ret_ty P.UnExpr {
-        P.un_op = name,
-        P.un_rhs = Ann rhs_ty rhs
-    }) = do
+    codegen (P.Un ty name rhs) = mdo
         maybe_decl <- lift $ U.getDecl ("unary_" ++ name)
         let impl = do
              fun_decl <- maybe_decl
-             Map.lookup (Ty.TFun Map.empty [rhs_ty] ret_ty) $ U.impls fun_decl
+             Map.lookup (Ty.TFun Map.empty [P.getExprAnn rhs] ty) $ U.impls fun_decl
         maybe (error "Function not found") (\impl -> do
-            gen_args <- [Ann rhs_ty rhs] |> map U.codegen |> sequence
+            gen_args <- [rhs] |> mapM U.codegen
             gen_args |> map (, []) |> I.call impl)
             impl
-
-instance U.Codegen (Ann Ty.Type (P.Expr Ty.Type)) where
-    codegen (Ann ty (P.For forExpr)) = U.codegen forExpr
-    codegen (Ann ty (P.If ifExpr)) = U.codegen ifExpr
-    codegen (Ann ty (P.While whileExpr)) = U.codegen whileExpr
-    codegen (Ann ty (P.Ident (Ann _ ident))) = do
-        found <- lift $ U.getVar ident
+    codegen (P.Ident _ name) = mdo
+        found <- lift $ U.getVar name
         maybe
             (error "Var not found")
-            (return . snd)
+            (\(_, op) -> I.load op 0)
             found
-    codegen (Ann ty (P.Lit literal)) = U.codegen literal
-    codegen (Ann ty (P.Call callExpr)) = U.codegen callExpr
-    codegen (Ann ty (P.Un unExpr)) = U.codegen unExpr
-    codegen (Ann ty (P.Bin binExpr)) = U.codegen binExpr
+    codegen (P.Lit ty lit@(P.IntLiteral i)) = C.int64 $ fromIntegral i
+    codegen (P.Lit ty lit@(P.DoubleLiteral d)) = C.double d
+    codegen (P.Lit ty lit@P.VoidLiteral) = error "Void literal"
+-- resolveTVars :: Map.Map Ty.Type Ty.Type -> (Ty.Type, Ty.Type) -> Map.Map Ty.Type Ty.Type
+-- resolveTVars map (t1@(Ty.TVar _), t2) =
+--     maybe (Map.insert t1 t2 map)
+--         (const map)
+--         (Map.lookup t1 map)
+-- resolveTVars map _ = map
+
+-- instance U.Codegen (Ann Ty.Type (P.CallExpr Ty.Type)) where
+--     codegen (Ann ret_ty P.CallExpr {
+--         P.call_ident = name,
+--         P.call_args = args
+--     }) = do
+--         maybe_decl <- lift $ U.getDecl name
+--         let prototype = Ty.TFun Map.empty (map annotation args) ret_ty
+--         let impl = do
+--              fun_decl <- maybe_decl
+--              Map.lookup prototype $ U.impls fun_decl
+--         maybe
+--             (error $ "Function " ++ show name ++ " not found: " ++ show prototype)
+--             (\decl ->
+--                 case Map.lookup prototype $ U.impls decl of
+--                     Nothing ->
+--                         case U.body of
+--                             Just body -> do
+--                                 lift U.newScope
+--                                 let gen_ty = U.ty decl
+--                                 let gen_args = (\(Ty.TFun _ args _) -> args) gen_ty
+--                                 let con_args = (\(Ty.TFun _ args _) -> args) prototype
+--                                 let vars = foldl resolveTVars Map.empty $ zip gen_args con_args
+
+--                                 lift U.dropScope
+--                             Nothing -> error $ "Function " ++ show name ++ " not found: " ++ show prototype
+--                     Just impl -> do
+--                         gen_args <- args |> map U.codegen |> sequence
+--                         gen_args |> map (, []) |> I.call impl)
+--             maybe_decl
 
 codegenAST :: P.AST Ty.Type -> AST.Module
 codegenAST stmts =
-    let (exprs, defns) = partition (\(Ann _ stmt) -> P.isExprStmt stmt) stmts
+    let (exprs, defns) = partition P.isExpr stmts
         topLevel = do
             printf <- U.externVarArgs (AST.mkName "printf") [(AST.mkName "fmt", T.ptr T.i8)] T.i32
             doubleFmt <- U.stringPtr "%lf\n" "PRINT_DOUBLE"
             intFmt <- U.stringPtr "%ld\n" "PRINT_INT"
             voidFmt <- U.stringPtr "()\n" "PRINT_VOID"
             let printGenericProto = Ty.TFun (Map.fromList [(Ty.TV "a", [Ty.Trait "Show"])]) [Ty.TVar $ Ty.TV "a"] Ty.void
-            lift $ U.pushDecl "print" printGenericProto
+            lift $ U.pushDecl "print" printGenericProto Nothing
             printDouble <- M.function (AST.mkName "print_double") [(U.double, M.ParameterName "n")] U.void $ \[n] -> mdo
                 entry <- Mn.block `Mn.named` "entry"
                 I.call printf [(doubleFmt, []), (n, [])]
                 return ()
-            lift $ U.pushImpl "print" (Ty.TFun Map.empty [Ty.float] Ty.void) printDouble
+            lift $ U.pushImpl "print" (Ty.TFun Map.empty [Ty.double] Ty.void) printDouble
             printInt <- M.function (AST.mkName "print_int") [(U.int, M.ParameterName "n")] U.void $ \[n] -> mdo
                 entry <- Mn.block `Mn.named` "entry"
                 I.call printf [(intFmt, []), (n, [])]

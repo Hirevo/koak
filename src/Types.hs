@@ -10,9 +10,9 @@ newtype TCon = TC String
 instance Show TCon where
     show (TC ty) = ty
 
-int, float, void :: Type
+int, double, void :: Type
 int = TCon $ TC "int"
-float = TCon $ TC "double"
+double = TCon $ TC "double"
 void = TCon $ TC "void"
 
 newtype TVar =
@@ -69,6 +69,11 @@ builtinUnaryOps :: Map.Map Name Type
 builtinUnaryOps = Map.fromList [
         ("!", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T"] int),
         ("-", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T"] (TVar $ TV "T"))
+    ]
+
+builtinFunctions :: Map.Map Name Type
+builtinFunctions = Map.fromList [
+        ("default", TFun (Map.fromList [(TV "T", [Trait "Default"])]) [] (TVar $ TV "T"))
     ]
 
 isFun :: Type -> Bool
