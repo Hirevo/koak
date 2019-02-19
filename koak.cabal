@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 747639a7b35d1342b878be0175b360d449f519bb68ddbd8a2bc284be0d0cc3c1
+-- hash: d21079f4150ff3523a06bd25deea13445185520663d969b507fdad6cbd01624c
 
 name:           koak
 version:        0.1.0.0
@@ -30,8 +30,8 @@ executable koak
       Misc
       Parser.Lang
       Parser.Lib
-      Passes.Annotation
       Passes.Deserialization
+      Passes.Inference
       Types
       Unifier
       Paths_koak

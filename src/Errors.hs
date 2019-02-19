@@ -12,11 +12,12 @@ data Error =
     TypeError Type Type
     | ArgCountError Int Int
     | NotInScopeError Name
-    | MultipleDefnError Name [Type]
+    | MultipleDefnError Name [Scheme]
     | AssignError
     | NotImplTraitError Type Trait
     | TraitNotInScopeError Trait
     | CantSpecializeError Name Type Type
+    | CantConstructInfiniteType TVar Type
     deriving (Eq)
 instance Show Error where
     show = \case
@@ -39,6 +40,11 @@ instance Show Error where
         CantSpecializeError name gen con ->
             "CantSpecializeError: (could not specialize '" <> name <> "' of type " <> show gen
                 <> " for type " <> show con
+instance Semigroup Error where
+    err <> _ = err
+instance Monoid Error where
+    mappend = (<>)
+    mempty = AssignError
 
 -- Usable to find close matches for NotInScope errors.
 levenshtein :: String -> String -> Int

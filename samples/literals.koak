@@ -1,3 +1,4 @@
 
-def value(): double 3;
+def value(): double
+    3;
 value();

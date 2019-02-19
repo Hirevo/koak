@@ -1,20 +1,20 @@
 
-def unary !! 10 (x: int): int
+def unary !! 10 (x:integer): integer
     if x then 0 else 1;
 
-def test(x: int, y: double, z: double): double
+def test(x:integer y:double z:double): double
     y;
 
-def binary <-> 10 (x: int, y: int): int
+def binary <-> 10 (x:integer y:integer): integer
     x + y;
 
-def binary ^ 60 (x: int, y: int): int
+def binary ^ 60 (x:integer y:integer): integer
     for i = 0, i < y, i = i + 1
         in x = x + 1;
 
 2 ^ 4;
 
-extern putchar(c: int): int;
+extern putchar(c:integer): integer;
 
 for c = 65, c < 91, c = c + 1
     in c = default();

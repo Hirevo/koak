@@ -28,7 +28,7 @@ import qualified LLVM.IRBuilder.Monad as Mn
 import qualified Data.Map as Map
 
 data FnDecl = FnDecl {
-    ty :: Ty.Type,
+    ty :: Ty.Scheme,
     body :: Maybe (P.Stmt (L.Range, Ty.Type)),
     impls :: Map.Map Ty.Type AST.Operand
 } deriving (Show, Eq)
@@ -38,10 +38,10 @@ data Env = Env {
     exprs :: [(Ty.Type, AST.Operand)]
 } deriving (Show, Eq)
 newtype CodegenTopLevel a = CodegenTopLevel {
-    unCodegenTopLevel :: M.ModuleBuilderT (State Env) a
+    runCodegenTopLevel :: M.ModuleBuilderT (State Env) a
 } deriving (Functor, Applicative, Monad, MonadFix, MonadState Env, M.MonadModuleBuilder)
 newtype Codegen a = Codegen {
-    unCodegen :: Mn.IRBuilderT CodegenTopLevel a
+    runCodegen :: Mn.IRBuilderT CodegenTopLevel a
 }  deriving (Functor, Applicative, Monad, MonadFix, MonadState Env, Mn.MonadIRBuilder)
 
 newScope, dropScope :: MonadState Env m => m ()
@@ -54,11 +54,11 @@ withScope action = do
     dropScope
     return ret
 
-pushDecl :: MonadState Env m => Ty.Name -> Ty.Type -> Maybe (P.Stmt (L.Range, Ty.Type)) -> m ()
+pushDecl :: MonadState Env m => Ty.Name -> Ty.Scheme -> Maybe (P.Stmt (L.Range, Ty.Type)) -> m ()
 pushDecl name ty body = modify $ \env -> env { decls = Map.insert name FnDecl{ ty, body, impls = Map.empty } $ decls env }
 pushImpl :: MonadState Env m => Ty.Name -> Ty.Type -> AST.Operand -> m ()
 pushImpl name ty op = modify $ \env -> env { decls = Map.adjust (\el -> el { impls = Map.insert ty op $ impls el }) name $ decls env }
-pushDeclAndImpl :: MonadState Env m => Ty.Name -> Ty.Type -> (Ty.Type, AST.Operand) -> m ()
+pushDeclAndImpl :: MonadState Env m => Ty.Name -> Ty.Scheme -> (Ty.Type, AST.Operand) -> m ()
 pushDeclAndImpl name ty (impl_ty, op) = modify $ \env -> env { decls = Map.insert name FnDecl{ ty, body = Nothing, impls = Map.singleton impl_ty op } $ decls env }
 pushVar :: MonadState Env m => Ty.Name -> Ty.Type -> AST.Operand -> m ()
 pushVar name ty operand = modify $ \env ->
@@ -95,7 +95,7 @@ irType (Ty.TCon (Ty.TC "int")) = int
 irType (Ty.TCon (Ty.TC "double")) = double
 irType (Ty.TCon (Ty.TC "bool")) = bool
 irType (Ty.TCon (Ty.TC "void")) = Codegen.Utils.void
-irType (Ty.TFun _ args ret_ty) = T.FunctionType (irType ret_ty) (args |> map irType) False
+irType (args Ty.:-> ret_ty) = T.FunctionType (irType ret_ty) (args |> map irType) False
 irType ty = error $ show ty
 
 -- | An constant static string pointer

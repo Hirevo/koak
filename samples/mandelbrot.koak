@@ -1,7 +1,7 @@
 
-extern putchar(c: int): int;
+extern putchar(c:integer): integer;
 
-def printdensity(d: double): int
+def printdensity(d:double): integer
     if d > 8.0 then
         putchar(32)  -- ' '
     else if d > 4.0 then
@@ -11,10 +11,10 @@ def printdensity(d: double): int
     else
         putchar(42); -- '*'
 
-def binary || 11 (a: int, b: int): int
+def binary || 11 (a:integer b:integer): integer
     if a then a else b;
 
-def mandelconverger(real: double, imag: double, iters: double, creal: double, cimag: double): double
+def mandelconverger(real:double imag:double iters:double creal:double cimag:double): double
     if (iters > 255.0) || ((real*real + imag*imag) > 4.0) then
         iters
     else
@@ -26,15 +26,15 @@ def mandelconverger(real: double, imag: double, iters: double, creal: double, ci
             cimag
         );
 
-def mandelconverge(real: double, imag: double): double
+def mandelconverge(real:double imag:double): double
     mandelconverger(real, imag, 0.0, real, imag);
 
-def mandelhelp(xmin: double, xmax: double, xstep: double, ymin: double, ymax: double, ystep: double): int
+def mandelhelp(xmin:double xmax:double xstep:double ymin:double ymax:double ystep:double): integer
     for y = ymin, y < ymax, y = y + ystep in (
         (for x = xmin, x < xmax, x = x + xstep in
             printdensity(mandelconverge(x, y))) : putchar(10));
 
-def mandel(realstart: double, imagstart: double, realmag: double, imagmag: double): int
+def mandel(realstart:double imagstart:double realmag:double imagmag:double): integer
     mandelhelp(
         realstart,
         realstart + realmag * 78.0,

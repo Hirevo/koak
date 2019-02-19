@@ -6,8 +6,10 @@ import Misc
 import Types hiding (void)
 import Parser.Lib hiding (Parser)
 import Parser.Lang hiding (argument)
-import Passes.Annotation
+-- import Passes.Annotation
+import Passes.Inference as I
 import Control.Monad.State.Lazy
+import Control.Monad.Except
 import Control.Exception.Base
 import System.Exit
 import Debug.Trace
@@ -49,19 +51,19 @@ withJIT ctx = EE.withMCJIT ctx optlevel model ptrelim fastins
 printBuiltinOps :: IO ()
 printBuiltinOps = do
     putStrLn "Built-in binary operators:"
-    builtinBinaryOps |> Map.toList
-                     |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
+    builtinBinaryOps |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
     putStrLn ""
     putStrLn "Built-in unary operators:"
-    builtinUnaryOps |> Map.toList
-                    |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
+    builtinUnaryOps |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
     putStrLn ""
 
 data Options = Options {
     output      :: Maybe String,
     llvm_ir     :: Maybe String,
     bitcode     :: Maybe String,
-    quiet       :: Bool,
+    ast         :: Bool,
+    builtins    :: Bool,
+    silent      :: Bool,
     filename    :: String
 }
 
@@ -77,6 +79,12 @@ optsParser = Options
     <*> optional (strOption $ long "bitcode"
                            <> metavar "FILE"
                            <> help "Write LLVM bitcode to FILE")
+    <*> switch (long "ast"
+                <> short 'a'
+                <> help "Display the internal AST")
+    <*> switch (long "builtins"
+                <> short 'b'
+                <> help "Display the builtin operators")
     <*> switch (long "silent"
                 <> short 's'
                 <> help "Disable the JIT execution")
@@ -95,23 +103,23 @@ main = flip catchIOError (\err -> do
     let arg = filename opts
     parseResult <- arg |> parseFile program
                        |> flip catchIOError (\_ -> ioError $ userError $ "No such source file: " <> arg)
-    -- printBuiltinOps
+    case builtins opts of
+        True -> printBuiltinOps
+        False -> return ()
     case parseResult of
-        Parsed (ast, _) -> -- do
-            -- putStrLn "AST:"
-            -- putStrLn (show ast)
-            -- putStrLn ""
-            case ast |> annotateAST of
+        Parsed (parsed, _) ->
+            case parsed |> infer of
                 Left err -> err |> show |> fail
-                Right types -> -- do
-                    -- putStrLn "Type-checked successfully !"
-                    -- putStrLn "Expression types:"
-                    -- types |> map (show . annotation)
-                    --       |> intercalate "\n"
-                    --       |> putStrLn
+                Right types -> do
+                    case ast opts of
+                        True -> do
+                            putStrLn "AST:"
+                            types |> show |> putStrLn
+                            putStrLn ""
+                        False -> return ()
                     Ctx.withContext $ \ctx -> do
                         let mod = codegenAST types
-                        -- mod |> ppllvm |> unpack |> putStrLn
+                        mod |> ppllvm |> unpack |> putStrLn
                         case llvm_ir opts of
                             Just ir_file -> do
                                 let ir = mod |> ppllvm |> unpack
@@ -130,7 +138,7 @@ main = flip catchIOError (\err -> do
                             case bitcode opts of
                                 Just bc_file -> Mdl.writeBitcodeToFile (Mdl.File bc_file) mod'
                                 Nothing -> return ()
-                            case quiet opts of
+                            case silent opts of
                                 True -> return ()
                                 False -> withJIT ctx $ \ecjit -> EE.withModuleInEngine ecjit mod' $ \ee -> do
                                     mainfn <- EE.getFunction ee (AST.mkName "main")

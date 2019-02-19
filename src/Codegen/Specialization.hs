@@ -22,7 +22,7 @@ import qualified Data.Map as Map
 
 type Specialize = State (Map.Map Ty.TVar Ty.Type)
 
-specializeExpr :: Ann (L.Range, Ty.Type) (P.Expr (L.Range, Ty.Type)) -> Specialize (Ann (L.Range, Ty.Type) (P.Expr (L.Range, Ty.Type)))
+specializeExpr :: P.TypedExpr -> Specialize P.TypedExpr
 specializeExpr = \case
     Ann (range, ty) (P.For start cond oper body) -> do
         new_ty <- case ty of

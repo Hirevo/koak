@@ -1,11 +1,11 @@
 
-extern putchar(c: int): int;
+extern putchar(c:integer): integer;
 
-extern cos(x: double): double;
-extern sin(x: double): double;
+extern cos(x:double): double;
+extern sin(x:double): double;
 
-extern srand(x: int): int;
-extern rand(): int;
+extern srand(x:integer): integer;
+extern rand(): integer;
 
 for i = 65, i < 91, i = i + 1 in putchar(i); -- Capital letters
 for i = 97, i < 123, i = i + 1 in putchar(i); -- Non-capital letters

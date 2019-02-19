@@ -1,0 +1,4 @@
+
+def i(): integer 3;
+
+i() + default();

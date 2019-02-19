@@ -1,4 +1,4 @@
 
-5 + 2;      -- Should compile just fine: <int: Num>(int, int) -> int.
+5 + 2;      -- Should compile just fine: <integer: Num>(integer, integer) -> integer.
 4.0 + 3.0;  -- Should compile just fine: <double: Num>(double, double) -> double.
-() + ();    -- Should fail to compile as 'void' does not implements to the 'Num' trait.
+-- () + ();    -- Should fail to compile as 'void' does not implements to the 'Num' trait.

@@ -6,3 +6,7 @@
 *.bc
 *.o
 *.c
+a.out
+*.dis
+/koak-generics
+/koak-union-types

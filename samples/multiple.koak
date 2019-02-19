@@ -1,0 +1,12 @@
+
+def fib(n:integer): integer
+    if n > 1
+        then fib(n - 1) + fib(n - 2)
+        else 1;
+
+def fib(x:integer y:integer): integer
+    (ret = 1) :
+    (for i = 0, i < y, i = i + 1 in
+        ret = ret * x);
+
+fib(20);

@@ -1,14 +1,16 @@
 
-def binary ^ 60 (x: int, y: int): int
-    ret = 1 : (for i = 0, i < y, i = i + 1 in ret = ret * x);
+def binary ^ 60 (x:integer y:integer): integer
+    (ret = 1) :
+    (for i = 0, i < y, i = i + 1 in
+        ret = ret * x);
 
-def binary ** 60 (x: int, y: int): int
+def binary ** 60 (x:integer y:integer): integer
     x ^ y;
 
-def binary && 12 (x: int, y: int): int
+def binary && 12 (x:integer y:integer): integer
     if x then y else x;
 
-def binary || 11 (x: int, y: int): int
+def binary || 11 (x:integer y:integer): integer
     if x then x else y;
 
 5 ** 10; -- 9765625

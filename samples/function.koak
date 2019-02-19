@@ -1,8 +1,14 @@
 
-def add(a:int b:int): int
+i = 2;
+
+def not(n:double): double
+    if n then 0 else 1;
+
+def add(a:integer b:integer): integer
     a + b;
 
-def add2(a:int): int
+def add2(a:integer): integer
     add(a, 2);
 
-add2(4);
+not(i);
+-- add2(i);

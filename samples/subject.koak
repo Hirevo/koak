@@ -1,5 +1,4 @@
-def test(x: double): double x - 1;
-y = 2;
-test(2);
-while y < 10 do y = y * 2;
--- test(y + 3);
+
+def test(x:double): double
+    x + 2.0;
+test(5.0) - 2 * 3 + 1;

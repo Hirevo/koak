@@ -55,13 +55,13 @@ prelude = do
     invD <- invDouble
     defI <- defaultInt
     defD <- defaultDouble
-    let ty1 = Ty.TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"
-    let ty2 = Ty.TFun (Map.fromList [("T", ["Ord"])]) ["T", "T"] Ty.int
-    let ty3 = Ty.TFun (Map.fromList [("T", ["Eq"])]) ["T", "T"] Ty.int
-    let ty4 = Ty.TFun (Map.fromList [("T", []), ("U", [])]) ["T", "U"] "U"
-    let ty5 = Ty.TFun (Map.fromList [("T", ["Num"])]) ["T"] "T"
-    let ty6 = Ty.TFun (Map.fromList [("T", ["Eq"])]) ["T"] Ty.int
-    let ty7 = Ty.TFun (Map.fromList [("T", ["Default"])]) [] "T"
+    let ty1 = [("T", ["Num"])] Ty.:=> ["T", "T"] Ty.:-> "T"
+    let ty2 = [("T", ["Ord"])] Ty.:=> ["T", "T"] Ty.:-> Ty.int
+    let ty3 = [("T", ["Eq"])] Ty.:=> ["T", "T"] Ty.:-> Ty.int
+    let ty4 = [("T", []), ("U", [])] Ty.:=> ["T", "U"] Ty.:-> "U"
+    let ty5 = [("T", ["Num"])] Ty.:=> ["T"] Ty.:-> "T"
+    let ty6 = [("T", ["Eq"])] Ty.:=> ["T"] Ty.:-> Ty.int
+    let ty7 = [("T", ["Default"])] Ty.:=> [] Ty.:-> "T"
     U.pushDecl "binary_+" ty1 Nothing
     U.pushDecl "binary_-" ty1 Nothing
     U.pushDecl "binary_*" ty1 Nothing
@@ -77,32 +77,32 @@ prelude = do
     U.pushDecl "unary_-" ty5 Nothing
     U.pushDecl "unary_!" ty6 Nothing
     U.pushDecl "default" ty7 Nothing
-    U.pushImpl "binary_+" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) addI
-    U.pushImpl "binary_+" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) addD
-    U.pushImpl "binary_-" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) subI
-    U.pushImpl "binary_-" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) subD
-    U.pushImpl "binary_*" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) multI
-    U.pushImpl "binary_*" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) multD
-    U.pushImpl "binary_/" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) divI
-    U.pushImpl "binary_/" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) divD
-    U.pushImpl "binary_%" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) modI
-    U.pushImpl "binary_%" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) modD
-    U.pushImpl "binary_<" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) ltI
-    U.pushImpl "binary_<" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) ltD
-    U.pushImpl "binary_>" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) gtI
-    U.pushImpl "binary_>" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) gtD
-    U.pushImpl "binary_==" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) eqI
-    U.pushImpl "binary_==" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) eqD
-    U.pushImpl "binary_==" (Ty.TFun Map.empty [Ty.bool, Ty.bool] Ty.int) eqB
-    U.pushImpl "binary_!=" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) neqI
-    U.pushImpl "binary_!=" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) neqD
-    U.pushImpl "binary_!=" (Ty.TFun Map.empty [Ty.bool, Ty.bool] Ty.int) neqB
-    U.pushImpl "unary_-" (Ty.TFun Map.empty [Ty.int] Ty.int) negI
-    U.pushImpl "unary_-" (Ty.TFun Map.empty [Ty.double] Ty.double) negD
-    U.pushImpl "unary_!" (Ty.TFun Map.empty [Ty.int] Ty.int) invI
-    U.pushImpl "unary_!" (Ty.TFun Map.empty [Ty.double] Ty.int) invD
-    U.pushImpl "default" (Ty.TFun Map.empty [] Ty.int) defI
-    U.pushImpl "default" (Ty.TFun Map.empty [] Ty.double) defD
+    U.pushImpl "binary_+" ([Ty.int, Ty.int] Ty.:-> Ty.int) addI
+    U.pushImpl "binary_+" ([Ty.double, Ty.double] Ty.:-> Ty.double) addD
+    U.pushImpl "binary_-" ([Ty.int, Ty.int] Ty.:-> Ty.int) subI
+    U.pushImpl "binary_-" ([Ty.double, Ty.double] Ty.:-> Ty.double) subD
+    U.pushImpl "binary_*" ([Ty.int, Ty.int] Ty.:-> Ty.int) multI
+    U.pushImpl "binary_*" ([Ty.double, Ty.double] Ty.:-> Ty.double) multD
+    U.pushImpl "binary_/" ([Ty.int, Ty.int] Ty.:-> Ty.int) divI
+    U.pushImpl "binary_/" ([Ty.double, Ty.double] Ty.:-> Ty.double) divD
+    U.pushImpl "binary_%" ([Ty.int, Ty.int] Ty.:-> Ty.int) modI
+    U.pushImpl "binary_%" ([Ty.double, Ty.double] Ty.:-> Ty.double) modD
+    U.pushImpl "binary_<" ([Ty.int, Ty.int] Ty.:-> Ty.int) ltI
+    U.pushImpl "binary_<" ([Ty.double, Ty.double] Ty.:-> Ty.int) ltD
+    U.pushImpl "binary_>" ([Ty.int, Ty.int] Ty.:-> Ty.int) gtI
+    U.pushImpl "binary_>" ([Ty.double, Ty.double] Ty.:-> Ty.int) gtD
+    U.pushImpl "binary_==" ([Ty.int, Ty.int] Ty.:-> Ty.int) eqI
+    U.pushImpl "binary_==" ([Ty.double, Ty.double] Ty.:-> Ty.int) eqD
+    U.pushImpl "binary_==" ([Ty.bool, Ty.bool] Ty.:-> Ty.int) eqB
+    U.pushImpl "binary_!=" ([Ty.int, Ty.int] Ty.:-> Ty.int) neqI
+    U.pushImpl "binary_!=" ([Ty.double, Ty.double] Ty.:-> Ty.int) neqD
+    U.pushImpl "binary_!=" ([Ty.bool, Ty.bool] Ty.:-> Ty.int) neqB
+    U.pushImpl "unary_-" ([Ty.int] Ty.:-> Ty.int) negI
+    U.pushImpl "unary_-" ([Ty.double] Ty.:-> Ty.double) negD
+    U.pushImpl "unary_!" ([Ty.int] Ty.:-> Ty.int) invI
+    U.pushImpl "unary_!" ([Ty.double] Ty.:-> Ty.int) invD
+    U.pushImpl "default" ([] Ty.:-> Ty.int) defI
+    U.pushImpl "default" ([] Ty.:-> Ty.double) defD
 
 addInt, addDouble :: M.MonadModuleBuilder m => m AST.Operand
 addInt =

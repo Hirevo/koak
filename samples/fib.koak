@@ -1,5 +1,5 @@
 
-def fib(n: int): int
+def fib(n:integer): integer
     if n > 1
         then fib(n - 1) + fib(n - 2)
         else 1;

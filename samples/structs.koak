@@ -1,0 +1,5 @@
+
+struct Vec x:integer y:integer;
+
+def add_vec(a: Vec, b: Vec): Vec
+    Vec (a.x + b.x) (a.y + b.y);
