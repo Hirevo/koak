@@ -1,0 +1,48 @@
+
+extern putchar(c: int): int;
+
+def printdensity(d: double): int
+    if d > 8.0 then
+        putchar(32)  -- ' '
+    else if d > 4.0 then
+        putchar(46)  -- '.'
+    else if d > 2.0 then
+        putchar(43)  -- '+'
+    else
+        putchar(42); -- '*'
+
+def binary || 11 (a: int, b: int): int
+    if a then a else b;
+
+def mandelconverger(real: double, imag: double, iters: double, creal: double, cimag: double): double
+    if (iters > 255.0) || ((real*real + imag*imag) > 4.0) then
+        iters
+    else
+        mandelconverger(
+            real * real - imag * imag + creal,
+            2.0 * real * imag + cimag,
+            iters + 1.0,
+            creal,
+            cimag
+        );
+
+def mandelconverge(real: double, imag: double): double
+    mandelconverger(real, imag, 0.0, real, imag);
+
+def mandelhelp(xmin: double, xmax: double, xstep: double, ymin: double, ymax: double, ystep: double): int
+    for y = ymin, y < ymax, y = y + ystep in (
+        (for x = xmin, x < xmax, x = x + xstep in
+            printdensity(mandelconverge(x, y))) : putchar(10));
+
+def mandel(realstart: double, imagstart: double, realmag: double, imagmag: double): int
+    mandelhelp(
+        realstart,
+        realstart + realmag * 78.0,
+        realmag,
+        imagstart,
+        imagstart + imagmag * 40.0,
+        imagmag
+    );
+
+mandel(-2.3, -1.3, 0.05, 0.07);
+

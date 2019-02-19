@@ -18,6 +18,7 @@ import qualified LLVM.AST.Global as Glb
 import qualified LLVM.AST.Linkage as Lnk
 import qualified LLVM.AST.Type as T
 import qualified LLVM.AST.Typed as Tpd
+import qualified LLVM.AST.Float as Flt
 import qualified LLVM.IRBuilder.Module as M
 import qualified LLVM.IRBuilder.Monad as Mn
 import qualified Data.Map as Map
@@ -68,14 +69,21 @@ class Codegen a where
 class CodegenTopLevel a where
     codegenTopLevel :: a -> M.ModuleBuilderT (State Env) AST.Operand
 
-int, double, void :: T.Type
+int, double, bool, void :: T.Type
 int = T.i64
 double = T.double
+bool = T.i1
 void = T.void
+
+defaultValue :: Ty.Type -> Cst.Constant
+defaultValue (Ty.TCon (Ty.TC "int")) = Cst.Int 64 0
+defaultValue (Ty.TCon (Ty.TC "double")) = Cst.Float (Flt.Double 0)
+defaultValue (Ty.TCon (Ty.TC "bool")) = Cst.Int 1 0
 
 irType :: Ty.Type -> T.Type
 irType (Ty.TCon (Ty.TC "int")) = int
 irType (Ty.TCon (Ty.TC "double")) = double
+irType (Ty.TCon (Ty.TC "bool")) = bool
 irType (Ty.TCon (Ty.TC "void")) = Codegen.Utils.void
 irType (Ty.TFun _ args ret_ty) = T.FunctionType (irType ret_ty) (args |> map irType) False
 irType ty = error $ show ty

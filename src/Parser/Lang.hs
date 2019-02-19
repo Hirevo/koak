@@ -46,6 +46,10 @@ getStmtAnn :: Stmt a -> a
 getStmtAnn (Defn a _ _ _ _ _) = a
 getStmtAnn (Extern a _ _ _) = a
 getStmtAnn (Expr a _) = a
+setStmtAnn :: a -> Stmt a -> Stmt a
+setStmtAnn n (Defn _ a b c d e) = Defn n a b c d e
+setStmtAnn n (Extern _ a b c) = Extern n a b c
+setStmtAnn n (Expr _ a) = Expr n a
 
 data Expr a =
     Call a (Ann a String) [Expr a]
@@ -84,17 +88,29 @@ getExprAnn (Ident a _) = a
 getExprAnn (For a _ _ _ _) = a
 getExprAnn (If a _ _ _) = a
 getExprAnn (While a _ _) = a
+setExprAnn :: a -> Expr a -> Expr a
+setExprAnn n (Call _ a b) = Call n a b
+setExprAnn n (Un _ a b) = Un n a b
+setExprAnn n (Bin _ a b c) = Bin n a b c
+setExprAnn n (Lit _ a) = Lit n a
+setExprAnn n (Ident _ a) = Ident n a
+setExprAnn n (For _ a b c d) = For n a b c d
+setExprAnn n (If _ a b c) = If n a b c
+setExprAnn n (While _ a b) = While n a b
 
 data Literal =
     DoubleLiteral Double
     | IntLiteral Int
+    | BooleanLiteral Bool
     | VoidLiteral
     deriving (Show, Eq)
-isIntLiteral, isDoubleLiteral, isVoidLiteral :: Literal -> Bool
+isIntLiteral, isDoubleLiteral, isBooleanLiteral, isVoidLiteral :: Literal -> Bool
 isIntLiteral (IntLiteral _) = True
 isIntLiteral _ = False
 isDoubleLiteral (DoubleLiteral _) = True
 isDoubleLiteral _ = False
+isBooleanLiteral (BooleanLiteral _) = True
+isBooleanLiteral _ = False
 isVoidLiteral VoidLiteral = True
 isVoidLiteral _ = False
 
@@ -159,6 +175,7 @@ primitiveType :: Parser Type
 primitiveType =
     (const Ty.int <$> pString "int")
     <|> (const Ty.double <$> pString "double")
+    <|> (const Ty.bool <$> pString "bool")
     <|> (const Ty.void <$> pString "void")
 
 functionType :: Parser Type
@@ -195,9 +212,14 @@ doubleConst =
             return ('0' : dot : decPart)
     in fmap (\s -> s |> readDouble |> DoubleLiteral) (p1 <|> p2)
 
+booleanLiteral :: Parser Literal
+booleanLiteral =
+    ((const (BooleanLiteral True) <$> pString "true")
+    <|> (const (BooleanLiteral False) <$> pString "false")) <* pNot (lower <|> upper)
+
 literal :: Parser Literal
 literal =
-    (doubleConst <|> decimalConst <|> (const VoidLiteral <$> pString "()"))
+    (doubleConst <|> decimalConst <|> booleanLiteral <|> (const VoidLiteral <$> pString "()"))
         ?? "Expected a literal"
 
 spacing, optSpacing :: Parser String
@@ -324,7 +346,7 @@ postfix = do
          expr <- expressions
          lift $ optSpacing *> pChar ')'
          return expr
-    let primary = ident <|> lit <|> paren
+    let primary = lit <|> ident <|> paren
     let callExpr = do
          ((name, name_range, args), range) <- withRangeT $ do
             (name, name_range) <- lift $ withRange identifier

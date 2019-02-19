@@ -216,6 +216,8 @@ instance Infer P.Expr where
         tv <- fresh
         pushConstraint tv (Left [Trait "Fractional"])
         return $ P.Lit (TVar tv) lit
+    infer (P.Lit range lit@(P.BooleanLiteral _)) =
+        return $ P.Lit T.bool lit
     infer (P.Lit range lit@P.VoidLiteral) =
         return $ P.Lit T.void lit
 
@@ -334,23 +336,30 @@ resolveConstraint acc elem = do
 unify :: Type -> Type -> Inferred Type
 unify t1@(TCon   _) t2@(TCon   _) | t1 == t2 = return t1
 unify t1@(TVar tv1) t2@(TCon tc2) = do
-    ret <- resolveConstraint (Right t1) (Right t2)
+    ret <- lift $ getConstraints tv1
     case ret of
-        Right ty -> return ty
-        Left traits -> do
+        Just ty -> case ty of
+            Left traits -> do
+                implementsTraits traits tc2
+                return t2
+            Right tv -> unify tv t2
+        Nothing -> do
             env <- get
             error $ "Unexpected unresolved constraint: " ++ show (t1, t2) ++ "\nEnv: " ++ show env
 unify t1@(TCon tc1) t2@(TVar tv2) = do
-    cs <- lift $ getConstraints tv2
-    ret <- foldM resolveConstraint (Right t1) cs
+    ret <- lift $ getConstraints tv2
     case ret of
-        Right ty -> return ty
-        Left traits -> do
+        Just ty -> case ty of
+            Left traits -> do
+                implementsTraits traits tc1
+                return t1
+            Right tv -> unify tv t1
+        Nothing -> do
             env <- get
             error $ "Unexpected unresolved constraint: " ++ show (t1, t2) ++ "\nEnv: " ++ show env
-unify t1@(TVar tv1) t2@(TVar tv2) = do
-    pushConstraint tv1 (Right t2)
-    return t2
+-- unify t1@(TVar tv1) t2@(TVar tv2) = do
+--     pushConstraint tv1 (Right t2)
+--     return t2
 unify t1 t2 = throwE $ TypeErr $ TypeError { expected = t1, got = t2 }
 
 inferAST :: P.AST a -> (Either Error (P.AST Type), Env)

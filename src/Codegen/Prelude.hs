@@ -1,11 +1,14 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Codegen.Prelude where
+    
+import Control.Monad.State.Lazy
 
 import Data.Char (ord)
 
 import qualified Types as Ty
 import qualified Codegen.Utils as U
+import qualified Parser.Lang as P
 import qualified LLVM.AST as AST
 import qualified LLVM.AST.IntegerPredicate as IPred
 import qualified LLVM.AST.FloatingPointPredicate as FPred
@@ -19,6 +22,79 @@ import qualified LLVM.IRBuilder.Instruction as I
 import qualified LLVM.IRBuilder.Module as M
 import qualified LLVM.IRBuilder.Monad as Mn
 import qualified Data.Map as Map
+
+prelude :: M.ModuleBuilderT (State U.Env) ()
+prelude = do
+    addI <- addInt
+    addD <- addDouble
+    subI <- subInt
+    subD <- subDouble
+    multI <- multInt
+    multD <- multDouble
+    divI <- divInt
+    divD <- divDouble
+    ltI <- ltInt
+    ltD <- ltDouble
+    gtI <- gtInt
+    gtD <- gtDouble
+    eqI <- eqInt
+    eqD <- eqDouble
+    eqB <- eqBool
+    neqI <- neqInt
+    neqD <- neqDouble
+    neqB <- neqBool
+    negI <- negInt
+    negD <- negDouble
+    invI <- invInt
+    invD <- invDouble
+    defI <- defaultInt
+    defD <- defaultDouble
+    let ty1 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Num"])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "T"] (Ty.TVar $ Ty.TV "T")
+    let ty2 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Ord"])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "T"] Ty.int
+    let ty3 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Eq"])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "T"] Ty.int
+    let ty4 = Ty.TFun (Map.fromList [(Ty.TV "T", []), (Ty.TV "U", [])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "U"] (Ty.TVar $ Ty.TV "U")
+    let ty5 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Num"])]) [Ty.TVar $ Ty.TV "T"] (Ty.TVar $ Ty.TV "T")
+    let ty6 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Eq"])]) [Ty.TVar $ Ty.TV "T"] Ty.int
+    let ty7 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Default"])]) [] (Ty.TVar $ Ty.TV "T")
+    lift $ U.pushDecl "binary_+" ty1 Nothing
+    lift $ U.pushDecl "binary_-" ty1 Nothing
+    lift $ U.pushDecl "binary_*" ty1 Nothing
+    lift $ U.pushDecl "binary_/" ty1 Nothing
+    lift $ U.pushDecl "binary_<" ty2 Nothing
+    lift $ U.pushDecl "binary_>" ty2 Nothing
+    lift $ U.pushDecl "binary_==" ty3 Nothing
+    lift $ U.pushDecl "binary_!=" ty3 Nothing
+    lift $ U.pushDecl "binary_:" ty4 (Just (P.Defn ty4 P.Binary "binary_:" 
+        [P.Arg (Ty.TVar $ Ty.TV "T") "a" (Ty.TVar $ Ty.TV "T"), P.Arg (Ty.TVar $ Ty.TV "T") "b" (Ty.TVar $ Ty.TV "U")]
+        (Ty.TVar $ Ty.TV "U")
+        (P.Ident (Ty.TVar $ Ty.TV "U") "b")))
+    lift $ U.pushDecl "unary_-" ty5 Nothing
+    lift $ U.pushDecl "unary_!" ty6 Nothing
+    lift $ U.pushDecl "default" ty7 Nothing
+    lift $ U.pushImpl "binary_+" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) addI
+    lift $ U.pushImpl "binary_+" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) addD
+    lift $ U.pushImpl "binary_-" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) subI
+    lift $ U.pushImpl "binary_-" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) subD
+    lift $ U.pushImpl "binary_*" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) multI
+    lift $ U.pushImpl "binary_*" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) multD
+    lift $ U.pushImpl "binary_/" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) divI
+    lift $ U.pushImpl "binary_/" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.double) divD
+    lift $ U.pushImpl "binary_<" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) ltI
+    lift $ U.pushImpl "binary_<" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) ltD
+    lift $ U.pushImpl "binary_>" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) gtI
+    lift $ U.pushImpl "binary_>" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) gtD
+    lift $ U.pushImpl "binary_==" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) eqI
+    lift $ U.pushImpl "binary_==" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) eqD
+    lift $ U.pushImpl "binary_==" (Ty.TFun Map.empty [Ty.bool, Ty.bool] Ty.int) eqB
+    lift $ U.pushImpl "binary_!=" (Ty.TFun Map.empty [Ty.int, Ty.int] Ty.int) neqI
+    lift $ U.pushImpl "binary_!=" (Ty.TFun Map.empty [Ty.double, Ty.double] Ty.int) neqD
+    lift $ U.pushImpl "binary_!=" (Ty.TFun Map.empty [Ty.bool, Ty.bool] Ty.int) neqB
+    lift $ U.pushImpl "unary_-" (Ty.TFun Map.empty [Ty.int] Ty.int) negI
+    lift $ U.pushImpl "unary_-" (Ty.TFun Map.empty [Ty.double] Ty.double) negD
+    lift $ U.pushImpl "unary_!" (Ty.TFun Map.empty [Ty.int] Ty.int) invI
+    lift $ U.pushImpl "unary_!" (Ty.TFun Map.empty [Ty.double] Ty.int) invD
+    lift $ U.pushImpl "default" (Ty.TFun Map.empty [] Ty.int) defI
+    lift $ U.pushImpl "default" (Ty.TFun Map.empty [] Ty.double) defD
 
 addInt, addDouble :: M.MonadModuleBuilder m => m AST.Operand
 addInt =
@@ -163,6 +239,17 @@ eqDouble =
         false <- C.int64 0
         result <- I.select cond true false
         I.ret result
+eqBool =
+    let name = AST.mkName "eq_bool"
+        params = [(U.bool, M.ParameterName "a"), (U.bool, M.ParameterName "b")]
+        ret_ty = U.int
+    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
+        entry <- Mn.block `Mn.named` "entry"
+        cond <- I.icmp IPred.EQ a b
+        true <- C.int64 1
+        false <- C.int64 0
+        result <- I.select cond true false
+        I.ret result
 
 neqInt, neqDouble :: M.MonadModuleBuilder m => m AST.Operand
 neqInt =
@@ -183,6 +270,17 @@ neqDouble =
     in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
         entry <- Mn.block `Mn.named` "entry"
         cond <- I.fcmp FPred.ONE a b
+        true <- C.int64 1
+        false <- C.int64 0
+        result <- I.select cond true false
+        I.ret result
+neqBool =
+    let name = AST.mkName "neq_bool"
+        params = [(U.bool, M.ParameterName "a"), (U.bool, M.ParameterName "b")]
+        ret_ty = U.int
+    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
+        entry <- Mn.block `Mn.named` "entry"
+        cond <- I.icmp IPred.NE a b
         true <- C.int64 1
         false <- C.int64 0
         result <- I.select cond true false

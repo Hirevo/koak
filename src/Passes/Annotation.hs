@@ -198,6 +198,8 @@ instance Annotate1 P.Expr where
         return $ P.Lit T.int lit
     annotate1 (P.Lit range lit@(P.DoubleLiteral _)) =
         return $ P.Lit T.double lit
+    annotate1 (P.Lit range lit@(P.BooleanLiteral _)) =
+        return $ P.Lit T.bool lit
     annotate1 (P.Lit range lit@P.VoidLiteral) =
         return $ P.Lit T.void lit
 

@@ -205,3 +205,10 @@ pAnyOf = choice . map pChar
 
 pString :: String -> Parser String
 pString = mapM pChar
+
+pNot :: Parser a -> Parser ()
+pNot p = Parser $ \str ->
+    case parseFrom (peek p) str of
+        Parsed (_, (rest, pos)) -> NotParsed pos (NotMatched "Invalid input")
+        NotParsed _ (NotMatched _) -> Parsed ((), str)
+        NotParsed pos EndOfInput -> NotParsed pos EndOfInput

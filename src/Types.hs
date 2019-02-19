@@ -13,9 +13,10 @@ newtype TCon = TC String
 instance Show TCon where
     show (TC ty) = ty
 
-int, double, void :: Type
+int, double, bool, void :: Type
 int = TCon $ TC "int"
 double = TCon $ TC "double"
+bool = TCon $ TC "bool"
 void = TCon $ TC "void"
 
 newtype TVar =
@@ -58,8 +59,9 @@ traitsTable :: Map.Map Trait [TCon]
 traitsTable = Map.fromList [ (Trait "Num", [TC "int", TC "double"]),
                              (Trait "Integral", [TC "int"]),
                              (Trait "Fractional", [TC "double"]),
-                             (Trait "Eq", [TC "int", TC "double"]),
-                             (Trait "Ord", [TC "int", TC "double"]) ]
+                             (Trait "Eq", [TC "int", TC "double", TC "bool"]),
+                             (Trait "Ord", [TC "int", TC "double"]),
+                             (Trait "Default", [TC "int", TC "double", TC "bool"]) ]
 
 builtinBinaryOps :: Map.Map Name Type
 builtinBinaryOps = Map.fromList [
