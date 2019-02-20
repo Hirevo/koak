@@ -201,16 +201,16 @@ decimalConst = IntLiteral <$> integer
 
 doubleConst :: Parser Literal
 doubleConst =
-    let p1 = do
+    let parser1 = do
             intPart <- some digit
             dot <- dot
             decPart <- fallback "0" $ some digit
             return (intPart <> (dot : decPart))
-        p2 = do
+        parser2 = do
             dot <- dot
             decPart <- some digit
             return ('0' : dot : decPart)
-    in fmap (\s -> s |> readDouble |> DoubleLiteral) (p1 <|> p2)
+    in fmap (\s -> s |> readDouble |> DoubleLiteral) (parser1 <|> parser2)
 
 booleanLiteral :: Parser Literal
 booleanLiteral =

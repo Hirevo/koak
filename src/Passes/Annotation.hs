@@ -1,4 +1,6 @@
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 module Passes.Annotation where
 
@@ -25,26 +27,17 @@ data Env = Env {
     tvars :: Map.Map TVar (Either [Trait] Type),
     count :: Int
 } deriving (Show, Eq)
-type Annotated = ExceptT Error (State Env)
-
+newtype Annotated a = Annotated {
+    unAnnotated :: ExceptT Error (State Env) a
+} deriving (Functor, Applicative, Monad, MonadFix, MonadState Env)
 throw :: Error -> Annotated a
-throw = throwE
+throw = Annotated . throwE
 
-letters :: [String]
-letters = [1..] >>= flip replicateM ['a'..'z']
--- letters = map show [0..]
-
-fresh :: Annotated TVar
-fresh = do
-    c <- gets count
-    modify $ \env -> env { count = c + 1 }
-    return $ TV (letters !! c)
-
-newScope, dropScope :: State Env ()
+newScope, dropScope :: MonadState Env m => m ()
 newScope = modify $ \env -> env { vars = Map.empty : vars env }
 dropScope = modify $ \env -> env { vars = tail $ vars env }
 
-pushFnDef, pushBinOp, pushUnOp, pushVar :: Name -> Type -> State Env ()
+pushFnDef, pushBinOp, pushUnOp, pushVar :: MonadState Env m => Name -> Type -> m ()
 pushFnDef name ty = modify $ \env -> env { fn_defs = Map.insert name ty $ fn_defs env }
 pushBinOp name ty = modify $ \env -> env { bin_ops = Map.insert name ty $ bin_ops env }
 pushUnOp name ty = modify $ \env -> env { un_ops = Map.insert name ty $ un_ops env }
@@ -53,7 +46,7 @@ pushVar name ty = modify $ \env ->
         then env { vars = [Map.singleton name ty] }
         else env { vars = Map.insert name ty (head $ vars env) : tail (vars env) }
 
-getFnDef, getBinOp, getUnOp, getVar :: Name -> State Env (Maybe Type)
+getFnDef, getBinOp, getUnOp, getVar :: MonadState Env m => Name -> m (Maybe Type)
 getFnDef name = gets $ \env -> env |> fn_defs |> Map.lookup name
 getBinOp name = gets $ \env -> env |> bin_ops |> Map.lookup name
 getUnOp name = gets $ \env -> env |> un_ops |> Map.lookup name
@@ -64,12 +57,12 @@ class Annotate a where
 
 instance Annotate P.Arg where
     annotate arg@(P.Arg range name ty) = do
-        lift $ pushVar name ty
+        pushVar name ty
         return $ P.Arg ty name ty
 
 instance Annotate P.Stmt where
     annotate (P.Defn range defnTy name args ret_ty body) = do
-        lift newScope
+        newScope
         annotated_args <- mapM annotate args
         let tys = map P.getArgAnn annotated_args
         let ty = TFun Map.empty tys ret_ty
@@ -77,13 +70,13 @@ instance Annotate P.Stmt where
              P.Function -> (getFnDef, pushFnDef)
              P.Unary -> (getUnOp, pushUnOp)
              P.Binary -> (getBinOp, pushBinOp)
-        maybe_fn <- lift $ getf name
+        maybe_fn <- getf name
         case maybe_fn of
             Just ty2 -> throw $ MultipleDefnError name [ty2, ty]
-            Nothing -> lift $ pushf name ty
+            Nothing -> pushf name ty
         annotated_body <- annotate body
         let inferred = P.getExprAnn annotated_body
-        lift dropScope
+        dropScope
         if inferred == ret_ty
             then return $ P.Defn ty defnTy name annotated_args ret_ty annotated_body
             else throw $ TypeError ret_ty inferred
@@ -91,51 +84,51 @@ instance Annotate P.Stmt where
         annotated_expr <- annotate expr
         return $ P.Expr (P.getExprAnn annotated_expr) annotated_expr
     annotate (P.Extern range name args ret_ty) = do
-        lift newScope
+        newScope
         annotated_args <- mapM annotate args
         let tys = map P.getArgAnn annotated_args
         let ty = TFun Map.empty tys ret_ty
-        maybe_fn <- lift $ getFnDef name
+        maybe_fn <- getFnDef name
         case maybe_fn of
             Just ty2 -> throw $ MultipleDefnError name [ty2, ty]
-            Nothing -> lift $ pushFnDef name ty
-        lift dropScope
+            Nothing -> pushFnDef name ty
+        dropScope
         return $ P.Extern ty name annotated_args ret_ty
 
 instance Annotate P.Expr where
     annotate (P.For range init cond oper body) = do
-        lift newScope
+        newScope
         tys <- mapM annotate [init, cond, oper]
         annotated_body <- annotate body
         let ty = P.getExprAnn annotated_body
-        lift dropScope
+        dropScope
         return $ P.For ty (tys !! 0) (tys !! 1) (tys !! 2) annotated_body
     annotate (P.If range cond then_body else_body) = do
-        lift newScope
+        newScope
         annotated_cond <- annotate cond
         annotated_then <- annotate then_body
         let then_ty = P.getExprAnn annotated_then
         case else_body of
             Nothing -> do
-                lift dropScope
+                dropScope
                 return $ P.If then_ty annotated_cond annotated_then Nothing
             Just block -> do
                 annotated_else <- annotate block
                 let else_ty = P.getExprAnn annotated_else
-                lift dropScope
+                dropScope
                 if then_ty == else_ty
                     then return $ P.If then_ty annotated_cond annotated_then (Just annotated_else)
                     else throw $ TypeError then_ty else_ty
     annotate (P.While range cond body) = do
-        lift newScope
+        newScope
         annotated_cond <- annotate cond
         annotated_body <- annotate body
         let body_ty = P.getExprAnn annotated_body
-        lift dropScope
+        dropScope
         return $ P.While body_ty annotated_cond annotated_body
     annotate (P.Call range (Ann _ name) args) = do
         fun_ty <- do
-            found <- lift $ gets $ \Env { fn_defs } ->
+            found <- gets $ \Env { fn_defs } ->
                 Map.lookup name fn_defs
             maybe
                 (throw $ NotInScopeError name)
@@ -151,12 +144,12 @@ instance Annotate P.Expr where
         let ty = P.getExprAnn annotated_rhs
         case lhs of
             P.Ident range name -> do
-                lift $ pushVar name ty
+                pushVar name ty
                 return $ P.Bin ty (Ann (TFun Map.empty [ty] ty) "=") (P.Ident ty name) annotated_rhs
             _ -> throw AssignError
     annotate (P.Bin range (Ann _ name) lhs rhs) = do
         fun_ty <- do
-            found <- lift $ gets $ \Env { bin_ops } ->
+            found <- gets $ \Env { bin_ops } ->
                 Map.lookup name bin_ops
             maybe
                 (throw $ NotInScopeError name)
@@ -169,7 +162,7 @@ instance Annotate P.Expr where
             Left err -> throw err
     annotate (P.Un range (Ann _ name) rhs) = do
         fun_ty <- do
-            found <- lift $ gets $ \Env { un_ops } ->
+            found <- gets $ \Env { un_ops } ->
                 Map.lookup name un_ops
             maybe
                 (throw $ NotInScopeError name)
@@ -181,7 +174,7 @@ instance Annotate P.Expr where
             Right ty -> return $ P.Un ty (Ann fun_ty name) (annotated_args !! 0)
             Left err -> throw err
     annotate (P.Ident range ident) = do
-        found <- lift $ gets $ \Env { bin_ops, un_ops, fn_defs, vars } ->
+        found <- gets $ \Env { bin_ops, un_ops, fn_defs, vars } ->
             foldl (<|>) Nothing $ fmap (Map.lookup ident) (vars <> [fn_defs, un_ops, bin_ops])
         maybe
             (throw $ NotInScopeError ident)
@@ -212,7 +205,7 @@ apply' (expected@(TCon _), got@(TCon _)) =
         then return got
         else throwE $ TypeError expected got
 apply' (TVar var@(TV name), got@(TCon cty)) = do
-    maybe_ty <- lift $ gets $ Map.lookup var
+    maybe_ty <- gets $ Map.lookup var
     maybe
         (throwE $ NotInScopeError name)
         ret
@@ -226,7 +219,7 @@ apply' (TVar var@(TV name), got@(TCon cty)) = do
                     then throwE $ NotImplTraitError (TCon cty) trait
                     else return ())
                  (Map.lookup trait traitsTable)) traits
-            lift $ modify $ Map.insert var $ Right cty
+            modify $ Map.insert var $ Right cty
             return got
         ret (Right expected) =
             if TCon expected == got
@@ -258,6 +251,7 @@ apply (TFun _ t1s _) t3s =
 annotateAST :: P.AST a -> Either Error (P.AST Type)
 annotateAST stmts =
     stmts |> mapM annotate
+          |> unAnnotated
           |> runExceptT
           |> flip evalState defaultEnv
 

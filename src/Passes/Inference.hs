@@ -1,4 +1,6 @@
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecursiveDo #-}
 module Passes.Inference where
@@ -30,9 +32,11 @@ data Env = Env {
     tvars :: Constraints, -- type variable constraints
     count :: Int -- count to generate unique names
 } deriving (Show, Eq)
-type Inferred = ExceptT Error (State Env)
+newtype Inferred a = Inferred {
+    unInferred :: ExceptT Error (State Env) a
+} deriving (Functor, Applicative, Monad, MonadFix, MonadState Env)
 throw :: Error -> Inferred a
-throw = throwE
+throw = Inferred . throwE
 
 -- | An infinite list of unique names
 letters :: [String]
@@ -46,11 +50,11 @@ fresh = do
     modify $ \env -> env { count = c + 1 }
     return $ TV (letters !! c)
 
-newScope, dropScope :: State Env ()
+newScope, dropScope :: MonadState Env m => m ()
 newScope = modify $ \env -> env { vars = Map.empty : vars env }
 dropScope = modify $ \env -> env { vars = tail $ vars env }
 
-pushFnDef, pushBinOp, pushUnOp, pushVar :: Name -> Type -> State Env ()
+pushFnDef, pushBinOp, pushUnOp, pushVar :: MonadState Env m => Name -> Type -> m ()
 pushFnDef name ty = modify $ \env -> env { fn_defs = Map.insert name ty $ fn_defs env }
 pushBinOp name ty = modify $ \env -> env { bin_ops = Map.insert name ty $ bin_ops env }
 pushUnOp name ty = modify $ \env -> env { un_ops = Map.insert name ty $ un_ops env }
@@ -60,19 +64,19 @@ pushVar name ty = modify $ \env ->
         else env { vars = Map.insert name ty (head $ vars env) : tail (vars env) }
 pushConstraint :: TVar -> Either [Trait] Type -> Inferred ()
 pushConstraint var cs1 = do
-    cs2 <- lift $ getConstraints var
+    cs2 <- getConstraints var
     case cs2 of
         Just cs -> do
             ret <- resolveConstraint cs1 cs
             modify $ \env -> env { tvars = Map.insert var ret $ tvars env }
         Nothing -> modify $ \env -> env { tvars = Map.insert var cs1 $ tvars env }
 
-getFnDef, getBinOp, getUnOp, getVar :: Name -> State Env (Maybe Type)
+getFnDef, getBinOp, getUnOp, getVar :: MonadState Env m => Name -> m (Maybe Type)
 getFnDef name = gets $ \env -> env |> fn_defs |> Map.lookup name
 getBinOp name = gets $ \env -> env |> bin_ops |> Map.lookup name
 getUnOp name = gets $ \env -> env |> un_ops |> Map.lookup name
 getVar name = gets $ \env -> env |> vars |> map (Map.lookup name) |> foldl (<|>) Nothing
-getConstraints :: TVar -> State Env (Maybe (Either [Trait] Type))
+getConstraints :: MonadState Env m => TVar -> m (Maybe (Either [Trait] Type))
 getConstraints tv = gets $ \Env{ tvars } -> tvars |> Map.lookup tv
 
 class Infer a where
@@ -81,13 +85,13 @@ class Infer a where
 instance Infer P.Arg where
     infer arg@(P.Arg range name ty) = do
         tv <- fresh
-        lift $ pushVar name (TVar tv)
+        pushVar name (TVar tv)
         pushConstraint tv (Left [])
         return $ P.Arg (TVar tv) name ty
 
 instance Infer P.Stmt where
     infer (P.Defn range defnTy name args user_ret body) = mdo
-        lift newScope
+        newScope
         annotated_args <- mapM infer args
         let user_args = map (\(P.Arg _ _ ty) -> ty) annotated_args
         let user_prototype = TFun Map.empty user_args user_ret
@@ -96,41 +100,41 @@ instance Infer P.Stmt where
              P.Function -> (getFnDef, pushFnDef)
              P.Unary -> (getUnOp, pushUnOp)
              P.Binary -> (getBinOp, pushBinOp)
-        maybe_fn <- lift $ getf name
+        maybe_fn <- getf name
         case maybe_fn of
             Just ty2 -> throw $ MultipleDefnError name [ty2, inferred_prototype]
-            Nothing -> lift $ pushf name inferred_prototype
+            Nothing -> pushf name inferred_prototype
         annotated_body <- infer body
-        inferred_args <- fmap (map fromJust) (args |> mapM (\(P.Arg _ name _) -> lift $ getVar name))
+        inferred_args <- fmap (map fromJust) (args |> mapM (\(P.Arg _ name _) -> getVar name))
         let inferred_ret = P.getExprAnn annotated_body
-        lift dropScope
+        dropScope
         forM (zip user_args inferred_args) $ \(u, TVar i) -> pushConstraint i (Right u)
         return $ P.Defn inferred_prototype defnTy name annotated_args user_ret annotated_body
     infer (P.Expr range expr) = do
         annotated_expr <- infer expr
         return $ P.Expr (P.getExprAnn annotated_expr) annotated_expr
     infer (P.Extern range name args ret_ty) = do
-        lift newScope
+        newScope
         annotated_args <- mapM infer args
         let tys = map P.getArgAnn annotated_args
         let ty = TFun Map.empty tys ret_ty
-        maybe_fn <- lift $ getFnDef name
+        maybe_fn <- getFnDef name
         case maybe_fn of
             Just ty2 -> throw $ MultipleDefnError name [ty2, ty]
-            Nothing -> lift $ pushFnDef name ty
-        lift dropScope
+            Nothing -> pushFnDef name ty
+        dropScope
         return $ P.Extern ty name annotated_args ret_ty
 
 instance Infer P.Expr where
     infer (P.For range init cond oper body) = do
-        lift newScope
+        newScope
         tys <- mapM infer [init, cond, oper]
         annotated_body <- infer body
         let ty = P.getExprAnn annotated_body
-        lift dropScope
+        dropScope
         return $ P.For ty (tys !! 0) (tys !! 1) (tys !! 2) annotated_body
     infer (P.If range cond then_body else_body) = do
-        lift newScope
+        newScope
         tv <- fresh
         annotated_cond <- infer cond
         annotated_then <- infer then_body
@@ -138,24 +142,24 @@ instance Infer P.Expr where
         pushConstraint tv (Right then_ty)
         case else_body of
             Nothing -> do
-                lift dropScope
+                dropScope
                 return $ P.If then_ty annotated_cond annotated_then Nothing
             Just block -> do
                 annotated_else <- infer block
                 let else_ty = P.getExprAnn annotated_else
                 pushConstraint tv (Right else_ty)
-                lift dropScope
+                dropScope
                 return $ P.If (TVar tv) annotated_cond annotated_then (Just annotated_else)
     infer (P.While range cond body) = do
-        lift newScope
+        newScope
         annotated_cond <- infer cond
         annotated_body <- infer body
         let body_ty = P.getExprAnn annotated_body
-        lift dropScope
+        dropScope
         return $ P.While body_ty annotated_cond annotated_body
     infer (P.Call range (Ann _ name) args) = do
         fun_ty <- do
-            found <- lift $ gets $ \Env { fn_defs } ->
+            found <- gets $ \Env { fn_defs } ->
                 Map.lookup name fn_defs
             maybe
                 (throw $ NotInScopeError name)
@@ -171,13 +175,13 @@ instance Infer P.Expr where
                 tv <- fresh
                 annotated_rhs <- infer rhs
                 let ty = P.getExprAnn annotated_rhs
-                lift $ pushVar name (TVar tv)
+                pushVar name (TVar tv)
                 pushConstraint tv (Right ty)
                 return $ P.Bin ty (Ann (TFun Map.empty [ty] ty) "=") (P.Ident ty name) annotated_rhs
             _ -> throw AssignError
     infer (P.Bin range (Ann _ name) lhs rhs) = do
         fun_ty <- do
-            found <- lift $ gets $ \Env { bin_ops } ->
+            found <- gets $ \Env { bin_ops } ->
                 Map.lookup name bin_ops
             maybe
                 (throw $ NotInScopeError name)
@@ -189,7 +193,7 @@ instance Infer P.Expr where
         return $ P.Bin ty (Ann fun_ty name) (annotated_args !! 0) (annotated_args !! 1)
     infer (P.Un range (Ann _ name) rhs) = do
         fun_ty <- do
-            found <- lift $ gets $ \Env { un_ops } ->
+            found <- gets $ \Env { un_ops } ->
                 Map.lookup name un_ops
             maybe
                 (throw $ NotInScopeError name)
@@ -200,7 +204,7 @@ instance Infer P.Expr where
         ty <- apply fun_ty args_tys
         return $ P.Un ty (Ann fun_ty name) (annotated_args !! 0)
     infer (P.Ident range ident) = do
-        found <- lift $ gets $ \Env { bin_ops, un_ops, fn_defs, vars } ->
+        found <- gets $ \Env { bin_ops, un_ops, fn_defs, vars } ->
             foldl (<|>) Nothing $ fmap (Map.lookup ident) (vars <> [fn_defs, un_ops, bin_ops])
         maybe
             (throw $ NotInScopeError ident)
@@ -236,7 +240,7 @@ implementsTraits traits ty = forM_ traits $ \trait ->
 --         then return got
 --         else throw $ TypeErr $ TypeError { expected, got }
 -- apply' (TVar var@(TV name), got@(TCon cty)) = do
---     maybe_ty <- lift $ gets $ Map.lookup var
+--     maybe_ty <- gets $ Map.lookup var
 --     maybe
 --         (throw $ NotInScopeError name)
 --         ret
@@ -245,7 +249,7 @@ implementsTraits traits ty = forM_ traits $ \trait ->
 --         ret :: Either [Trait] TCon -> Apply Type
 --         ret (Left traits) = do
 --             implementsTraits traits cty
---             lift $ modify $ Map.insert var $ Right cty
+--             modify $ Map.insert var $ Right cty
 --             return got
 --         ret (Right expected) =
 --             if TCon expected == got
@@ -301,7 +305,7 @@ freeTypeVars (TFun cs args ret) =
 substitute :: Either [Trait] Type -> Inferred (Either [Trait] Type)
 substitute (Left traits) = return (Left traits)
 substitute (Right (TVar tv)) = do
-    maybe_cs <- lift $ getConstraints tv
+    maybe_cs <- getConstraints tv
     case maybe_cs of
         Just cs -> substitute cs
         Nothing -> return (Right $ TVar tv)
@@ -334,7 +338,7 @@ resolveConstraint acc elem = do
 unify :: Type -> Type -> Inferred Type
 unify t1@(TCon   _) t2@(TCon   _) | t1 == t2 = return t1
 unify t1@(TVar tv1) t2@(TCon tc2) = do
-    ret <- lift $ getConstraints tv1
+    ret <- getConstraints tv1
     case ret of
         Just ty -> case ty of
             Left traits -> do
@@ -345,7 +349,7 @@ unify t1@(TVar tv1) t2@(TCon tc2) = do
             env <- get
             error $ "Unexpected unresolved constraint: " <> show (t1, t2) <> "\nEnv: " <> show env
 unify t1@(TCon tc1) t2@(TVar tv2) = do
-    ret <- lift $ getConstraints tv2
+    ret <- getConstraints tv2
     case ret of
         Just ty -> case ty of
             Left traits -> do
@@ -363,6 +367,7 @@ unify t1 t2 = throw $ TypeError t1 t2
 inferAST :: P.AST a -> (Either Error (P.AST Type), Env)
 inferAST stmts =
     stmts |> mapM infer
+          |> unInferred
           |> runExceptT
           |> flip runState defaultEnv
 

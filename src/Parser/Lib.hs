@@ -1,7 +1,9 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE LambdaCase #-}
 module Parser.Lib where
 
+import Misc
 import Control.Applicative
 import Control.Monad
 
@@ -10,30 +12,37 @@ data ParseError =
     | EndOfInput
     deriving (Eq)
 instance Show ParseError where
-    show (NotMatched err) = err
-    show EndOfInput = "Unexpected end of input"
+    show = \case
+        NotMatched err -> err
+        EndOfInput -> "Unexpected end of input"
 
 data ParseResult a =
     Parsed a
     | NotParsed Pos ParseError
     deriving (Eq)
 instance Show a => Show (ParseResult a) where
-    show (Parsed a) = show a
-    show (NotParsed pos err) = "ParseError (at " <> show pos <> "): " <> show err
+    show = \case
+        Parsed a -> show a
+        NotParsed pos err -> "ParseError (at " <> show pos <> "): " <> show err
 
 instance Functor ParseResult where
-    fmap _ (NotParsed pos err) = NotParsed pos err
-    fmap f (Parsed x)          = Parsed $ f x
+    fmap f = \case
+        NotParsed pos err -> NotParsed pos err
+        Parsed x -> Parsed (f x)
 
 instance Applicative ParseResult where
     pure = Parsed
     NotParsed pos err <*> _ = NotParsed pos err
-    Parsed f          <*> x = f <$> x
+    Parsed f          <*> x = fmap f x
 
 instance Alternative ParseResult where
-    empty = NotParsed Pos{ line = 0, column = 0 } $ NotMatched "Unknown error"
-    Parsed a <|> _ = Parsed a
-    _        <|> b = b
+    empty = NotParsed Pos{ file = Nothing, line = 0, column = 0 } $ NotMatched "Unknown error"
+    Parsed a       <|> _              = Parsed a
+    NotParsed p1 _ <|> Parsed b       = Parsed b
+    NotParsed p1 a <|> NotParsed p2 b =
+        if p1 > p2
+            then NotParsed p1 a
+            else NotParsed p2 b
 
 instance Monad ParseResult where
     return = pure
@@ -42,10 +51,16 @@ instance Monad ParseResult where
 
 data Pos = Pos {
     line :: !Int,
-    column :: !Int
-} deriving (Eq, Ord)
+    column :: !Int,
+    file :: Maybe FilePath
+} deriving (Eq)
 instance Show Pos where
-    show Pos{ line, column } = show line <> ":" <> show column
+    show = \case
+        Pos{ file = Just file, line, column } -> file <> ":" <> show line <> ":" <> show column
+        Pos{ file = Nothing, line, column } -> show line <> ":" <> show column
+instance Ord Pos where
+    compare Pos{ line = l1, column = c1 } Pos{ line = l2, column = c2 } =
+        compare l1 l2 <> compare c1 c2
 
 data Range = Range {
     start :: !Pos,
@@ -58,12 +73,12 @@ newtype Parser a = Parser
     ((String, Pos) -> ParseResult (a, (String, Pos)))
 
 parse :: Parser a -> String -> ParseResult (a, (String, Pos))
-parse (Parser f) input = f (input, Pos{ line = 1, column = 1 })
+parse (Parser f) input = f (input, Pos{ file = Nothing, line = 1, column = 1 })
 
 parseFile :: Parser a -> String -> IO (ParseResult (a, (String, Pos)))
 parseFile (Parser f) input = do
     contents <- readFile input
-    return $ f (contents, Pos{ line = 1, column = 1 })
+    return $ f (contents, Pos{ file = Just input, line = 1, column = 1 })
 
 parseFrom :: Parser a -> (String, Pos) -> ParseResult (a, (String, Pos))
 parseFrom (Parser f) = f
@@ -77,7 +92,7 @@ instance Applicative Parser where
     pure a = Parser $ \str -> Parsed (a, str)
     Parser p1 <*> p2 = Parser $ \str -> do
         (f, str') <- p1 str
-        parseFrom (f <$> p2) str'
+        parseFrom (fmap f p2) str'
 
 instance Alternative Parser where
     empty = mzero
@@ -132,13 +147,11 @@ whileNot p = Parser $ \str ->
         NotParsed pos EndOfInput -> NotParsed pos EndOfInput
 
 satisfy :: (Char -> Bool) -> Parser Char
-satisfy f =
-    let consumeChar :: ((String, Pos) -> ParseResult (Char, (String, Pos)))
-        consumeChar ([], pos) = NotParsed pos EndOfInput
-        consumeChar (c:cs, pos)
-            | f c = Parsed (c, (cs, updatePos c pos))
-            | otherwise = NotParsed pos $ NotMatched $ "Unexpected token: " <> show c
-    in Parser consumeChar
+satisfy f = Parser $ \case
+    ([], pos) -> NotParsed pos EndOfInput
+    (c:cs, pos) -> if f c
+        then Parsed (c, (cs, updatePos c pos))
+        else NotParsed pos $ NotMatched $ "Unexpected token: " <> show c
 
 choice :: [Parser a] -> Parser a
 choice = foldl (<|>) empty
@@ -159,46 +172,33 @@ both :: Parser a -> Parser b -> Parser (a, b)
 both p1 p2 = (\a b -> (a, b)) <$> p1 <*> p2
 
 pEnd :: Parser ()
-pEnd =
-    let consumeEnd :: ((String, Pos) -> ParseResult ((), (String, Pos)))
-        consumeEnd ([], pos) = Parsed ((), ("", pos))
-        consumeEnd (c:_, pos)  = NotParsed pos $ NotMatched $ "Expected end of input, got: " <> show c
-    in Parser consumeEnd
+pEnd = Parser $ \case
+    ([], pos) -> Parsed ((), ("", pos))
+    (c:_, pos) -> NotParsed pos $ NotMatched $ "Expected end of input, got: " <> show c
 
 pAny :: Parser Char
-pAny =
-    let consumeAny :: ((String, Pos) -> ParseResult (Char, (String, Pos)))
-        consumeAny ([], pos) = NotParsed pos EndOfInput
-        consumeAny (c:cs, pos) = Parsed (c, (cs, updatePos c pos))
-    in Parser consumeAny
+pAny = Parser $ \case
+    ([], pos) -> NotParsed pos EndOfInput
+    (c:cs, pos) -> Parsed (c, (cs, updatePos c pos))
 
 pNothing :: Parser ()
 pNothing = pure ()
 
 pRange :: Char -> Char -> Parser Char
-pRange c =
-    let consumeRange :: Char -> Char -> ((String, Pos) -> ParseResult (Char, (String, Pos)))
-        consumeRange _  _ ([], pos) = NotParsed pos EndOfInput
-        consumeRange c1 c2 (c:cs, pos)
-            | c1 <= c && c <= c2 = Parsed (c, (cs, updatePos c pos))
-            | otherwise          = NotParsed pos $ NotMatched $ "Expected: [" <> [c1] <> "-" <> [c2] <> "], got: " <> show c
-    in Parser . consumeRange c
+pRange c1 c2 = Parser $ \case
+    ([], pos) -> NotParsed pos EndOfInput
+    (c:cs, pos) | c1 <= c && c <= c2 -> Parsed (c, (cs, updatePos c pos))
+    (c:_, pos) -> NotParsed pos $ NotMatched $ "Expected: [" <> [c1] <> "-" <> [c2] <> "], got: " <> show c
 
 pChar, pNotChar :: Char -> Parser Char
-pChar =
-    let consumeChar :: Char -> ((String, Pos) -> ParseResult (Char, (String, Pos)))
-        consumeChar _ ([], pos) = NotParsed pos EndOfInput
-        consumeChar c (x:xs, pos)
-            | x == c    = Parsed (c, (xs, updatePos x pos))
-            | otherwise = NotParsed pos $ NotMatched $ "Expected: " <> show c <> ", got: " <> show x
-    in Parser . consumeChar
-pNotChar =
-    let consumeNotChar :: Char -> ((String, Pos) -> ParseResult (Char, (String, Pos)))
-        consumeNotChar _ ([], pos) = NotParsed pos EndOfInput
-        consumeNotChar c (x:xs, pos)
-            | x == c    = NotParsed pos $ NotMatched $ "Expected anything except: " <> show c <> ", got: " <> show x
-            | otherwise = Parsed (x, (xs, updatePos x pos))
-    in Parser . consumeNotChar
+pChar c = Parser $ \case
+    ([], pos) -> NotParsed pos EndOfInput
+    (x:xs, pos) | x == c -> Parsed (c, (xs, updatePos x pos))
+    (x:_, pos) -> NotParsed pos $ NotMatched $ "Expected: " <> show c <> ", got: " <> show x
+pNotChar c = Parser $ \case
+    ([], pos) -> NotParsed pos EndOfInput
+    (x:xs, pos) | x /= c -> Parsed (c, (xs, updatePos x pos))
+    (x:_, pos) -> NotParsed pos $ NotMatched $ "Expected anything except: " <> show c <> ", got: " <> show x
 
 pAnyOf :: String -> Parser Char
 pAnyOf = choice . map pChar

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 module Types where
 
 import Misc
@@ -37,17 +38,18 @@ data Type =
     | TFun (Map.Map TVar [Trait]) [Type] Type
     deriving (Eq, Ord)
 instance Show Type where
-    show (TCon ty) = show ty
-    show (TVar var) = show var
-    show (TFun constraints args ret) =
-        let vars = do
-             (var, traits) <- Map.toList constraints
-             if null traits
-                 then return $ show var
-                 else return $ show var <> ": " <> (traits |> map show |> intercalate " + ")
-            vars_decl = if null vars then "" else "<" <> (vars |> intercalate ", ") <> ">"
-        in vars_decl <> "(" <> (args |> map show |> intercalate ", ") <> ") -> "
-            <> show ret
+    show = \case
+        TCon ty -> show ty
+        TVar var -> show var
+        TFun constraints args ret ->
+            let vars = do
+                 (var, traits) <- Map.toList constraints
+                 if null traits
+                     then return $ show var
+                     else return $ show var <> ": " <> (traits |> map show |> intercalate " + ")
+                vars_decl = if null vars then "" else "<" <> (vars |> intercalate ", ") <> ">"
+            in vars_decl <> "(" <> (args |> map show |> intercalate ", ") <> ") -> "
+                <> show ret
 instance IsString Type where
     fromString = TVar . TV
 isTVar :: Type -> Bool

@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns #-}
 module Main where
 
 import Annotation
@@ -56,7 +57,6 @@ printBuiltinOps = do
                     |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
     putStrLn ""
 
-
 main :: IO ()
 main = flip catchIOError (\err -> do
         hPutStrLn stderr $ "error: " <> ioeGetErrorString err
@@ -97,5 +97,14 @@ main = flip catchIOError (\err -> do
                                         -- Tgt.withHostTargetMachine $ \tgt ->
                                         --     Mdl.writeObjectToFile tgt (Mdl.File "out.o") mod'
                                 -- Pcs.callCommand "cc -O3 out.ll -lm"
+                err@(NotParsed Pos{ file = Just file, line, column } _) -> do
+                    contents <- readFile file
+                    let ln = contents |> lines |> (!! (line - 1))
+                    let col = column - 1
+                    let padding = '~' |> repeat |> take col
+                    let line_nb = show line
+                    let pre_pad = take (length line_nb) (repeat ' ')
+                    fail (show err <> "\n " <> pre_pad <> " |\n " <> line_nb <> " | " <> ln <> "\n "
+                        <> pre_pad <> " | " <> take col padding <> "^" <> drop (col + 1) padding)
                 err -> err |> show |> fail
         _ -> fail $ "Unexpected number of arguments: expected 1 but got " <> show (length args)
