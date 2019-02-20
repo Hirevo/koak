@@ -1,0 +1,6 @@
+
+5 + 2;          -- Compiles fine as "int" implements "Num".
+4.0 + 3.0;      -- Also compiles fine as "double" also implements "Num".
+() + ();        -- Should not compile, "void" does not implement the "Num" trait.
+true + false;   -- Should not compile, "bool" also does not implement the "Num" trait.
+

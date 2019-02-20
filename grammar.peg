@@ -29,10 +29,16 @@ primary <- identifier
          | literal
          | '(' expressions ')'
 
-identifier <- [a-zA-Z][a-zA-Z0-9]*
+identifier <- [A-Za-z][A-Za-z0-9]*
 
 dot <- '.' !'.'
 decimal_const <- [0-9]+
 double_const <- (decimal_const dot [0-9]* | dot [0-9]+)
 
-literal <- decimal_const | double_const | '()'
+void_literal <- "()"
+boolean_literal <- ("true" | "false") ![A-Za-z]
+
+literal <- decimal_const
+        | double_const
+        | void_literal
+        | boolean_literal

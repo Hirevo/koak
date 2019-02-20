@@ -2,7 +2,7 @@
 extern putchar(x: int): int;
 extern sqrt(x: double): double;
 
-radius = 3.0;
+radius = 4.0;
 sradius = radius * radius;
 
 for y = -sradius + 1.0, y < sradius, y = y + 1.0 in

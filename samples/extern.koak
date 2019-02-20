@@ -17,4 +17,4 @@ srand(5);
 rand();
 rand();
 
--- while i = 65 do putchar(i);
+-- (i = 65) : (while i == 65 do putchar(i));

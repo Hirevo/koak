@@ -66,6 +66,7 @@ main = flip catchIOError (\err -> do
         [arg] -> do
             parseResult <- arg |> parseFile program
                                |> flip catchIOError (\_ -> ioError $ userError $ "No such source file: " <> arg)
+            -- printBuiltinOps
             case parseResult of
                 Parsed (ast, _) -> -- do
                     -- putStrLn "AST:"
@@ -105,6 +106,6 @@ main = flip catchIOError (\err -> do
                     let line_nb = show line
                     let pre_pad = take (length line_nb) (repeat ' ')
                     fail (show err <> "\n " <> pre_pad <> " |\n " <> line_nb <> " | " <> ln <> "\n "
-                        <> pre_pad <> " | " <> take col padding <> "^" <> drop (col + 1) padding)
+                        <> pre_pad <> " | " <> take col padding <> "^")
                 err -> err |> show |> fail
         _ -> fail $ "Unexpected number of arguments: expected 1 but got " <> show (length args)
