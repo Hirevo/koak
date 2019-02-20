@@ -49,13 +49,13 @@ prelude = do
     invD <- invDouble
     defI <- defaultInt
     defD <- defaultDouble
-    let ty1 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Num"])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "T"] (Ty.TVar $ Ty.TV "T")
-    let ty2 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Ord"])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "T"] Ty.int
-    let ty3 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Eq"])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "T"] Ty.int
-    let ty4 = Ty.TFun (Map.fromList [(Ty.TV "T", []), (Ty.TV "U", [])]) [Ty.TVar $ Ty.TV "T", Ty.TVar $ Ty.TV "U"] (Ty.TVar $ Ty.TV "U")
-    let ty5 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Num"])]) [Ty.TVar $ Ty.TV "T"] (Ty.TVar $ Ty.TV "T")
-    let ty6 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Eq"])]) [Ty.TVar $ Ty.TV "T"] Ty.int
-    let ty7 = Ty.TFun (Map.fromList [(Ty.TV "T", [Ty.Trait "Default"])]) [] (Ty.TVar $ Ty.TV "T")
+    let ty1 = Ty.TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"
+    let ty2 = Ty.TFun (Map.fromList [("T", ["Ord"])]) ["T", "T"] Ty.int
+    let ty3 = Ty.TFun (Map.fromList [("T", ["Eq"])]) ["T", "T"] Ty.int
+    let ty4 = Ty.TFun (Map.fromList [("T", []), ("U", [])]) ["T", "U"] "U"
+    let ty5 = Ty.TFun (Map.fromList [("T", ["Num"])]) ["T"] "T"
+    let ty6 = Ty.TFun (Map.fromList [("T", ["Eq"])]) ["T"] Ty.int
+    let ty7 = Ty.TFun (Map.fromList [("T", ["Default"])]) [] "T"
     lift $ U.pushDecl "binary_+" ty1 Nothing
     lift $ U.pushDecl "binary_-" ty1 Nothing
     lift $ U.pushDecl "binary_*" ty1 Nothing
@@ -64,10 +64,8 @@ prelude = do
     lift $ U.pushDecl "binary_>" ty2 Nothing
     lift $ U.pushDecl "binary_==" ty3 Nothing
     lift $ U.pushDecl "binary_!=" ty3 Nothing
-    lift $ U.pushDecl "binary_:" ty4 (Just (P.Defn ty4 P.Binary "binary_:" 
-        [P.Arg (Ty.TVar $ Ty.TV "T") "a" (Ty.TVar $ Ty.TV "T"), P.Arg (Ty.TVar $ Ty.TV "T") "b" (Ty.TVar $ Ty.TV "U")]
-        (Ty.TVar $ Ty.TV "U")
-        (P.Ident (Ty.TVar $ Ty.TV "U") "b")))
+    lift $ U.pushDecl "binary_:" ty4 (Just (P.Defn ty4 P.Binary "binary_:"
+        [P.Arg "T" "a" "T", P.Arg "T" "b" "U"] "U" (P.Ident "U" "b")))
     lift $ U.pushDecl "unary_-" ty5 Nothing
     lift $ U.pushDecl "unary_!" ty6 Nothing
     lift $ U.pushDecl "default" ty7 Nothing

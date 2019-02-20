@@ -31,10 +31,12 @@ data Env = Env {
     count :: Int -- count to generate unique names
 } deriving (Show, Eq)
 type Inferred = ExceptT Error (State Env)
+throw :: Error -> Inferred a
+throw = throwE
 
 -- | An infinite list of unique names
 letters :: [String]
-letters = [1..] >>= flip replicateM ['a'..'z']
+letters = [1..] >>= flip replicateM ['A'..'Z']
 -- letters = map show [0..]
 
 -- | Gets a fresh unique name (based on the state count)
@@ -96,9 +98,7 @@ instance Infer P.Stmt where
              P.Binary -> (getBinOp, pushBinOp)
         maybe_fn <- lift $ getf name
         case maybe_fn of
-            Just ty2 -> throwE $ MultipleDefnErr $ MultipleDefnError {
-                name, definitions = [ty2, inferred_prototype]
-            }
+            Just ty2 -> throw $ MultipleDefnError name [ty2, inferred_prototype]
             Nothing -> lift $ pushf name inferred_prototype
         annotated_body <- infer body
         inferred_args <- fmap (map fromJust) (args |> mapM (\(P.Arg _ name _) -> lift $ getVar name))
@@ -116,9 +116,7 @@ instance Infer P.Stmt where
         let ty = TFun Map.empty tys ret_ty
         maybe_fn <- lift $ getFnDef name
         case maybe_fn of
-            Just ty2 -> throwE $ MultipleDefnErr $ MultipleDefnError {
-                name, definitions = [ty2, ty]
-            }
+            Just ty2 -> throw $ MultipleDefnError name [ty2, ty]
             Nothing -> lift $ pushFnDef name ty
         lift dropScope
         return $ P.Extern ty name annotated_args ret_ty
@@ -160,7 +158,7 @@ instance Infer P.Expr where
             found <- lift $ gets $ \Env { fn_defs } ->
                 Map.lookup name fn_defs
             maybe
-                (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
+                (throw $ NotInScopeError name)
                 return
                 found
         annotated_args <- mapM infer args
@@ -176,13 +174,13 @@ instance Infer P.Expr where
                 lift $ pushVar name (TVar tv)
                 pushConstraint tv (Right ty)
                 return $ P.Bin ty (Ann (TFun Map.empty [ty] ty) "=") (P.Ident ty name) annotated_rhs
-            _ -> throwE $ AssignErr AssignError
+            _ -> throw AssignError
     infer (P.Bin range (Ann _ name) lhs rhs) = do
         fun_ty <- do
             found <- lift $ gets $ \Env { bin_ops } ->
                 Map.lookup name bin_ops
             maybe
-                (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
+                (throw $ NotInScopeError name)
                 return
                 found
         annotated_args <- mapM infer [lhs, rhs]
@@ -194,7 +192,7 @@ instance Infer P.Expr where
             found <- lift $ gets $ \Env { un_ops } ->
                 Map.lookup name un_ops
             maybe
-                (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
+                (throw $ NotInScopeError name)
                 return
                 found
         annotated_args <- mapM infer [rhs]
@@ -203,9 +201,9 @@ instance Infer P.Expr where
         return $ P.Un ty (Ann fun_ty name) (annotated_args !! 0)
     infer (P.Ident range ident) = do
         found <- lift $ gets $ \Env { bin_ops, un_ops, fn_defs, vars } ->
-            foldl (<|>) Nothing $ fmap (Map.lookup ident) (vars ++ [fn_defs, un_ops, bin_ops])
+            foldl (<|>) Nothing $ fmap (Map.lookup ident) (vars <> [fn_defs, un_ops, bin_ops])
         maybe
-            (throwE $ NotInScopeErr $ NotInScopeError { ident })
+            (throw $ NotInScopeError ident)
             (\ty -> return $ P.Ident ty ident)
             found
     infer (P.Lit range lit@(P.IntLiteral _)) = do
@@ -224,10 +222,10 @@ instance Infer P.Expr where
 implementsTraits :: [Trait] -> TCon -> Inferred ()
 implementsTraits traits ty = forM_ traits $ \trait ->
     case Map.lookup trait traitsTable of
-        Nothing -> throwE $ TraitNotInScopeErr $ TraitNotInScopeError { trait }
+        Nothing -> throw $ TraitNotInScopeError trait
         Just types ->
             if notElem ty types
-                then throwE $ NotImplTraitErr $ NotImplTraitError { ty, trait }
+                then throw $ NotImplTraitError (TCon ty) trait
                 else return ()
 
 -- TODO: Better document this function (or I won't be able to ever read it again).
@@ -236,11 +234,11 @@ implementsTraits traits ty = forM_ traits $ \trait ->
 -- apply' (expected@(TCon _), got@(TCon _)) =
 --     if got == expected
 --         then return got
---         else throwE $ TypeErr $ TypeError { expected, got }
+--         else throw $ TypeErr $ TypeError { expected, got }
 -- apply' (TVar var@(TV name), got@(TCon cty)) = do
 --     maybe_ty <- lift $ gets $ Map.lookup var
 --     maybe
---         (throwE $ NotInScopeErr $ NotInScopeError { ident = name })
+--         (throw $ NotInScopeError name)
 --         ret
 --         maybe_ty
 --     where
@@ -252,7 +250,7 @@ implementsTraits traits ty = forM_ traits $ \trait ->
 --         ret (Right expected) =
 --             if TCon expected == got
 --                 then return got
---                 else throwE $ TypeErr $ TypeError { expected = TCon expected, got }
+--                 else throw $ TypeErr $ TypeError { expected = TCon expected, got }
 -- apply' (expected@(TCon cty), got@(TVar var)) = do
 --     maybe_ret <- gets (\env -> Map.lookup var $ tvars env)
 --     case maybe_ret of
@@ -263,7 +261,7 @@ implementsTraits traits ty = forM_ traits $ \trait ->
 --         Right ty ->
 --             if expected == ty
 --                 then return expected
---                 else throwE $ TypeErr $ TypeError { expected, got = ty }
+--                 else throw $ TypeErr $ TypeError { expected, got = ty }
 -- apply' (expected@(TVar _), got@(TVar _)) = error "Attempted (TVar <-> TVar)"
 -- apply' _ = error "Unexpected type variable, really should never happen"
 
@@ -291,7 +289,7 @@ apply (TFun constraints t1s t2) t3s | length t1s == length t3s = do
     forM_ (zip t3s s_t1s) $ \(u, TVar i) -> pushConstraint i (Right u)
     return s_t2
 apply (TFun _ t1s _) t3s =
-    throwE $ ArgCountErr $ ArgCountError { expected = length t1s, got = length t3s }
+    throw $ ArgCountError (length t1s) (length t3s)
 
 freeTypeVars :: Type -> Set.Set TVar
 freeTypeVars (TVar tv) = Set.singleton tv
@@ -315,7 +313,7 @@ resolveConstraint acc elem = do
     s2 <- substitute elem
     case (s1, s2) of
         (Left traits1, Left traits2) ->
-            return (Left $ nub $ traits1 ++ traits2)
+            return (Left $ nub $ traits1 <> traits2)
         (Left traits1, Right (TCon t2)) -> do
             implementsTraits traits1 t2
             return (Right $ TCon t2)
@@ -327,10 +325,10 @@ resolveConstraint acc elem = do
         (Right t1, Right t2) ->
             if t1 == t2
                 then return (Right t1)
-                else throwE $ TypeErr $ TypeError { expected = t1, got = t2 }
+                else throw $ TypeError t1 t2
         err -> do
             env <- get
-            error $ "Not unifiable: " ++ show err ++ " [Env: " ++ show env ++ "]"
+            error $ "Not unifiable: " <> show err <> " [Env: " <> show env <> "]"
 
 -- Avoid infinite loops ? (freeTypeVars function ?)
 unify :: Type -> Type -> Inferred Type
@@ -345,7 +343,7 @@ unify t1@(TVar tv1) t2@(TCon tc2) = do
             Right tv -> unify tv t2
         Nothing -> do
             env <- get
-            error $ "Unexpected unresolved constraint: " ++ show (t1, t2) ++ "\nEnv: " ++ show env
+            error $ "Unexpected unresolved constraint: " <> show (t1, t2) <> "\nEnv: " <> show env
 unify t1@(TCon tc1) t2@(TVar tv2) = do
     ret <- lift $ getConstraints tv2
     case ret of
@@ -356,11 +354,11 @@ unify t1@(TCon tc1) t2@(TVar tv2) = do
             Right tv -> unify tv t1
         Nothing -> do
             env <- get
-            error $ "Unexpected unresolved constraint: " ++ show (t1, t2) ++ "\nEnv: " ++ show env
+            error $ "Unexpected unresolved constraint: " <> show (t1, t2) <> "\nEnv: " <> show env
 -- unify t1@(TVar tv1) t2@(TVar tv2) = do
 --     pushConstraint tv1 (Right t2)
 --     return t2
-unify t1 t2 = throwE $ TypeErr $ TypeError { expected = t1, got = t2 }
+unify t1 t2 = throw $ TypeError t1 t2
 
 inferAST :: P.AST a -> (Either Error (P.AST Type), Env)
 inferAST stmts =

@@ -1,6 +1,8 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Types where
 
 import Misc
+import Data.String
 
 import Data.List (intercalate, find)
 
@@ -12,18 +14,22 @@ newtype TCon = TC String
     deriving (Eq, Ord)
 instance Show TCon where
     show (TC ty) = ty
+instance IsString TCon where
+    fromString = TC
 
 int, double, bool, void :: Type
-int = TCon $ TC "int"
-double = TCon $ TC "double"
-bool = TCon $ TC "bool"
-void = TCon $ TC "void"
+int = TCon "int"
+double = TCon "double"
+bool = TCon "bool"
+void = TCon "void"
 
 newtype TVar =
     TV Name
     deriving (Eq, Ord)
 instance Show TVar where
     show (TV var) = var
+instance IsString TVar where
+    fromString = TV
 
 data Type =
     TCon TCon
@@ -38,10 +44,12 @@ instance Show Type where
              (var, traits) <- Map.toList constraints
              if null traits
                  then return $ show var
-                 else return $ show var ++ ": " ++ (traits |> map show |> intercalate " + ")
-            vars_decl = if null vars then "" else "<" ++ (vars |> intercalate ", ") ++ ">"
-        in vars_decl ++ "(" ++ (args |> map show |> intercalate ", ") ++ ") -> "
-            ++ show ret
+                 else return $ show var <> ": " <> (traits |> map show |> intercalate " + ")
+            vars_decl = if null vars then "" else "<" <> (vars |> intercalate ", ") <> ">"
+        in vars_decl <> "(" <> (args |> map show |> intercalate ", ") <> ") -> "
+            <> show ret
+instance IsString Type where
+    fromString = TVar . TV
 isTVar :: Type -> Bool
 isTVar (TVar _) = True
 isTVar _ = False
@@ -54,37 +62,39 @@ newtype Trait =
     deriving (Eq, Ord)
 instance Show Trait where
     show (Trait name) = name
+instance IsString Trait where
+    fromString = Trait
 
 traitsTable :: Map.Map Trait [TCon]
-traitsTable = Map.fromList [ (Trait "Num", [TC "int", TC "double"]),
-                             (Trait "Integral", [TC "int"]),
-                             (Trait "Fractional", [TC "double"]),
-                             (Trait "Eq", [TC "int", TC "double", TC "bool"]),
-                             (Trait "Ord", [TC "int", TC "double"]),
-                             (Trait "Default", [TC "int", TC "double", TC "bool"]) ]
+traitsTable = Map.fromList [ ("Num",        ["int", "double"]),
+                             ("Integral",   ["int"]),
+                             ("Fractional", ["double"]),
+                             ("Eq",         ["int", "double", "bool"]),
+                             ("Ord",        ["int", "double"]),
+                             ("Default",    ["int", "double", "bool"]) ]
 
 builtinBinaryOps :: Map.Map Name Type
 builtinBinaryOps = Map.fromList [
-        ( "+", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
-        ( "-", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
-        ( "*", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
-        ( "/", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T", TVar $ TV "T"] (TVar $ TV "T")),
-        ( "<", TFun (Map.fromList [(TV "T", [Trait "Ord"])]) [TVar $ TV "T", TVar $ TV "T"] int),
-        ( ">", TFun (Map.fromList [(TV "T", [Trait "Ord"])]) [TVar $ TV "T", TVar $ TV "T"] int),
-        ("==", TFun (Map.fromList [(TV "T", [Trait "Eq"])]) [TVar $ TV "T", TVar $ TV "T"] int),
-        ("!=", TFun (Map.fromList [(TV "T", [Trait "Eq"])]) [TVar $ TV "T", TVar $ TV "T"] int),
-        ( ":", TFun (Map.fromList [(TV "T", []), (TV "U", [])]) [TVar $ TV "T", TVar $ TV "U"] (TVar $ TV "U"))
+        ( "+", TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"),
+        ( "-", TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"),
+        ( "*", TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"),
+        ( "/", TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"),
+        ( "<", TFun (Map.fromList [("T", ["Ord"])]) ["T", "T"] int),
+        ( ">", TFun (Map.fromList [("T", ["Ord"])]) ["T", "T"] int),
+        ("==", TFun (Map.fromList [("T", ["Eq"])]) ["T", "T"] int),
+        ("!=", TFun (Map.fromList [("T", ["Eq"])]) ["T", "T"] int),
+        ( ":", TFun (Map.fromList [("T", []), ("U", [])]) ["T", "U"] "U")
     ]
 
 builtinUnaryOps :: Map.Map Name Type
 builtinUnaryOps = Map.fromList [
-        ("!", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T"] int),
-        ("-", TFun (Map.fromList [(TV "T", [Trait "Num"])]) [TVar $ TV "T"] (TVar $ TV "T"))
+        ("!", TFun (Map.fromList [("T", ["Num"])]) ["T"] int),
+        ("-", TFun (Map.fromList [("T", ["Num"])]) ["T"] "T")
     ]
 
 builtinFunctions :: Map.Map Name Type
 builtinFunctions = Map.fromList [
-        ("default", TFun (Map.fromList [(TV "T", [Trait "Default"])]) [] (TVar $ TV "T"))
+        ("default", TFun (Map.fromList [("T", ["Default"])]) [] "T")
     ]
 
 isFun :: Type -> Bool

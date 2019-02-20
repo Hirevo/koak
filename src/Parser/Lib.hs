@@ -19,7 +19,7 @@ data ParseResult a =
     deriving (Eq)
 instance Show a => Show (ParseResult a) where
     show (Parsed a) = show a
-    show (NotParsed pos err) = "ParseError (at " ++ show pos ++ "): " ++ show err
+    show (NotParsed pos err) = "ParseError (at " <> show pos <> "): " <> show err
 
 instance Functor ParseResult where
     fmap _ (NotParsed pos err) = NotParsed pos err
@@ -45,14 +45,14 @@ data Pos = Pos {
     column :: !Int
 } deriving (Eq, Ord)
 instance Show Pos where
-    show Pos{ line, column } = show line ++ ":" ++ show column
+    show Pos{ line, column } = show line <> ":" <> show column
 
 data Range = Range {
     start :: !Pos,
     end :: !Pos
 } deriving (Eq, Ord)
 instance Show Range where
-    show Range{ start, end } = show start ++ "-" ++ show end
+    show Range{ start, end } = show start <> "-" <> show end
 
 newtype Parser a = Parser
     ((String, Pos) -> ParseResult (a, (String, Pos)))
@@ -137,7 +137,7 @@ satisfy f =
         consumeChar ([], pos) = NotParsed pos EndOfInput
         consumeChar (c:cs, pos)
             | f c = Parsed (c, (cs, updatePos c pos))
-            | otherwise = NotParsed pos $ NotMatched $ "Unexpected token: " ++ show c
+            | otherwise = NotParsed pos $ NotMatched $ "Unexpected token: " <> show c
     in Parser consumeChar
 
 choice :: [Parser a] -> Parser a
@@ -162,7 +162,7 @@ pEnd :: Parser ()
 pEnd =
     let consumeEnd :: ((String, Pos) -> ParseResult ((), (String, Pos)))
         consumeEnd ([], pos) = Parsed ((), ("", pos))
-        consumeEnd (c:_, pos)  = NotParsed pos $ NotMatched $ "Expected end of input, got: " ++ show c
+        consumeEnd (c:_, pos)  = NotParsed pos $ NotMatched $ "Expected end of input, got: " <> show c
     in Parser consumeEnd
 
 pAny :: Parser Char
@@ -181,7 +181,7 @@ pRange c =
         consumeRange _  _ ([], pos) = NotParsed pos EndOfInput
         consumeRange c1 c2 (c:cs, pos)
             | c1 <= c && c <= c2 = Parsed (c, (cs, updatePos c pos))
-            | otherwise          = NotParsed pos $ NotMatched $ "Expected: [" ++ [c1] ++ "-" ++ [c2] ++ "], got: " ++ show c
+            | otherwise          = NotParsed pos $ NotMatched $ "Expected: [" <> [c1] <> "-" <> [c2] <> "], got: " <> show c
     in Parser . consumeRange c
 
 pChar, pNotChar :: Char -> Parser Char
@@ -190,13 +190,13 @@ pChar =
         consumeChar _ ([], pos) = NotParsed pos EndOfInput
         consumeChar c (x:xs, pos)
             | x == c    = Parsed (c, (xs, updatePos x pos))
-            | otherwise = NotParsed pos $ NotMatched $ "Expected: " ++ show c ++ ", got: " ++ show x
+            | otherwise = NotParsed pos $ NotMatched $ "Expected: " <> show c <> ", got: " <> show x
     in Parser . consumeChar
 pNotChar =
     let consumeNotChar :: Char -> ((String, Pos) -> ParseResult (Char, (String, Pos)))
         consumeNotChar _ ([], pos) = NotParsed pos EndOfInput
         consumeNotChar c (x:xs, pos)
-            | x == c    = NotParsed pos $ NotMatched $ "Expected anything except: " ++ show c ++ ", got: " ++ show x
+            | x == c    = NotParsed pos $ NotMatched $ "Expected anything except: " <> show c <> ", got: " <> show x
             | otherwise = Parsed (x, (xs, updatePos x pos))
     in Parser . consumeNotChar
 

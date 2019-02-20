@@ -205,7 +205,7 @@ doubleConst =
             intPart <- some digit
             dot <- dot
             decPart <- fallback "0" $ some digit
-            return (intPart ++ (dot : decPart))
+            return (intPart <> (dot : decPart))
         p2 = do
             dot <- dot
             decPart <- some digit

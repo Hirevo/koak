@@ -40,8 +40,8 @@ instance U.CodegenTopLevel (P.Stmt Ty.Type) where
     codegenTopLevel (P.Defn fn_ty defnTy name args ret_ty body) = mdo
         let final_name = case defnTy of
              P.Function -> name
-             P.Unary -> "unary_" ++ name
-             P.Binary -> "binary_" ++ name
+             P.Unary -> "unary_" <> name
+             P.Binary -> "binary_" <> name
         let ir_args = map (\(P.Arg ty name _) -> (AST.mkName name, U.irType ty)) args
         let ir_type = ret_ty |> U.irType
         lift $ U.pushDeclAndImpl final_name fn_ty (fn_ty, fn)
@@ -76,7 +76,7 @@ instance U.CodegenTopLevel (P.Stmt Ty.Type) where
                     lift $ lift U.dropScope
                     I.ret val
                 count <- lift $ gets $ \env -> env |> U.exprs |> length
-                fn <- U.function (AST.mkName ("__anon_" ++ show count)) [] ir_type blocks
+                fn <- U.function (AST.mkName ("__anon_" <> show count)) [] ir_type blocks
                 lift $ U.pushExpr (ty, fn)
                 return fn
             Just (_, var) -> do
@@ -88,7 +88,7 @@ instance U.CodegenTopLevel (P.Stmt Ty.Type) where
                     lift $ lift U.dropScope
                     I.ret val
                 count <- lift $ gets $ \env -> env |> U.exprs |> length
-                fn <- U.function (AST.mkName ("__anon_" ++ show count)) [] ir_type blocks
+                fn <- U.function (AST.mkName ("__anon_" <> show count)) [] ir_type blocks
                 lift $ U.pushExpr (ty, fn)
                 return fn
     codegenTopLevel (P.Expr ty expr) = do
@@ -100,7 +100,7 @@ instance U.CodegenTopLevel (P.Stmt Ty.Type) where
             lift $ lift U.dropScope
             I.ret ret
         count <- lift $ gets $ \env -> env |> U.exprs |> length
-        fn <- U.function (AST.mkName ("__anon_" ++ show count)) [] ir_type blocks
+        fn <- U.function (AST.mkName ("__anon_" <> show count)) [] ir_type blocks
         lift $ U.pushExpr (ty, fn)
         return fn
     codegenTopLevel (P.Extern fn_ty name args ret_ty) = do
@@ -197,8 +197,8 @@ instance U.Codegen (P.Expr Ty.Type) where
                             impl <- lift $ specializeFunction prototype decl
                             gen_args <- args |> mapM U.codegen
                             gen_args |> map (, []) |> I.call impl
-                        Nothing -> error $ "Can't specialize function " ++ show name ++ ": " ++ show prototype
-            Nothing -> error $ "Function " ++ show name ++ " not found: " ++ show prototype
+                        Nothing -> error $ "Can't specialize function " <> show name <> ": " <> show prototype
+            Nothing -> error $ "Function " <> show name <> " not found: " <> show prototype
     codegen (P.Bin ty (Ann _ "=") (P.Ident _ name) start) = do
         maybe_var <- lift $ lift $ U.getVar name
         case maybe_var of
@@ -213,7 +213,7 @@ instance U.Codegen (P.Expr Ty.Type) where
                 I.store var 0 val
                 return val
     codegen (P.Bin ty (Ann _ name) lhs rhs) = mdo
-        let prefixed = "binary_" ++ name
+        let prefixed = "binary_" <> name
         maybe_decl <- lift $ lift $ U.getDecl prefixed
         let prototype = Ty.TFun Map.empty (map P.getExprAnn [lhs, rhs]) ty
         case maybe_decl of
@@ -227,10 +227,10 @@ instance U.Codegen (P.Expr Ty.Type) where
                             impl <- lift $ specializeFunction prototype decl
                             gen_args <- [lhs, rhs] |> mapM U.codegen
                             gen_args |> map (, []) |> I.call impl
-                        Nothing -> error $ "Can't specialize function " ++ show prefixed ++ ": " ++ show prototype
-            Nothing -> error $ "Function " ++ show prefixed ++ " not found: " ++ show prototype
+                        Nothing -> error $ "Can't specialize function " <> show prefixed <> ": " <> show prototype
+            Nothing -> error $ "Function " <> show prefixed <> " not found: " <> show prototype
     codegen (P.Un ty (Ann _ name) rhs) = mdo
-        let prefixed = "unary_" ++ name
+        let prefixed = "unary_" <> name
         maybe_decl <- lift $ lift $ U.getDecl prefixed
         let prototype = Ty.TFun Map.empty (map P.getExprAnn [rhs]) ty
         case maybe_decl of
@@ -244,13 +244,13 @@ instance U.Codegen (P.Expr Ty.Type) where
                             impl <- lift $ specializeFunction prototype decl
                             gen_args <- [rhs] |> mapM U.codegen
                             gen_args |> map (, []) |> I.call impl
-                        Nothing -> error $ "Can't specialize function " ++ show prefixed ++ ": " ++ show prototype
-            Nothing -> error $ "Function " ++ show prefixed ++ " not found: " ++ show prototype
+                        Nothing -> error $ "Can't specialize function " <> show prefixed <> ": " <> show prototype
+            Nothing -> error $ "Function " <> show prefixed <> " not found: " <> show prototype
     codegen (P.Ident _ name) = mdo
         found <- lift $ lift $ U.getVar name
         maybe
             (do env <- get
-                error $ "Variable " ++ show name ++ " not found: " ++ show env)
+                error $ "Variable " <> show name <> " not found: " <> show env)
             (\(_, op) -> I.load op 0)
             found
     codegen (P.Lit ty lit@(P.IntLiteral i)) = C.int64 $ fromIntegral i
@@ -299,7 +299,7 @@ codegenAST stmts =
             strFmt <- U.stringPtr "%s\n" "PRINT_STR"
             trueStr <- U.stringPtr "true" "TRUE_STR"
             falseStr <- U.stringPtr "false" "FALSE_STR"
-            let printGenericProto = Ty.TFun (Map.fromList [(Ty.TV "a", [Ty.Trait "Show"])]) [Ty.TVar $ Ty.TV "a"] Ty.void
+            let printGenericProto = Ty.TFun (Map.fromList [("a", ["Show"])]) ["a"] Ty.void
             lift $ U.pushDecl "print" printGenericProto Nothing
             printDouble <- M.function (AST.mkName "print_double") [(U.double, M.ParameterName "n")] U.void $ \[n] -> mdo
                 entry <- Mn.block `Mn.named` "entry"
@@ -327,7 +327,7 @@ codegenAST stmts =
                     let prototype = Ty.TFun Map.empty [ty] Ty.void
                     maybe_decl <- lift $ U.getImpl "print" prototype
                     maybe
-                        (error $ "Function \"print\" not found: " ++ show prototype)
+                        (error $ "Function \"print\" not found: " <> show prototype)
                         (\impl -> I.call impl [(ret, [])])
                         maybe_decl
                 ret <- C.int64 0

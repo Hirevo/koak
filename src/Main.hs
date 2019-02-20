@@ -49,31 +49,31 @@ printBuiltinOps :: IO ()
 printBuiltinOps = do
     putStrLn "Built-in binary operators:"
     builtinBinaryOps |> Map.toList
-                     |> mapM (\(name, ty) -> putStrLn ("(" ++ name ++ "): " ++ show ty))
+                     |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
     putStrLn ""
     putStrLn "Built-in unary operators:"
     builtinUnaryOps |> Map.toList
-                    |> mapM (\(name, ty) -> putStrLn ("(" ++ name ++ "): " ++ show ty))
+                    |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
     putStrLn ""
 
 
 main :: IO ()
 main = flip catchIOError (\err -> do
-        hPutStrLn stderr $ "error: " ++ ioeGetErrorString err
+        hPutStrLn stderr $ "error: " <> ioeGetErrorString err
         exitWith (ExitFailure 84)) $ do
     args <- getArgs
     case args of
         [arg] -> do
             parseResult <- arg |> parseFile program
-                               |> flip catchIOError (\_ -> ioError $ userError $ "No such source file: " ++ arg)
+                               |> flip catchIOError (\_ -> ioError $ userError $ "No such source file: " <> arg)
             case parseResult of
                 Parsed (ast, _) -> -- do
                     -- putStrLn "AST:"
                     -- putStrLn (show ast)
                     -- putStrLn ""
                     -- case ast |> inferAST of
-                    --     (Left err, env) -> (show err ++ "\nEnv: " ++ show env) |> fail
-                    --     (Right types, env) -> (show types ++ "\nEnv: " ++ show env) |> putStrLn
+                    --     (Left err, env) -> (show err <> "\nEnv: " <> show env) |> fail
+                    --     (Right types, env) -> (show types <> "\nEnv: " <> show env) |> putStrLn
                     --     -- Left err -> err |> show |> fail
                     --     -- Right types -> types |> show |> putStrLn
                     case ast |> annotateAST of
@@ -98,4 +98,4 @@ main = flip catchIOError (\err -> do
                                         --     Mdl.writeObjectToFile tgt (Mdl.File "out.o") mod'
                                 -- Pcs.callCommand "cc -O3 out.ll -lm"
                 err -> err |> show |> fail
-        _ -> fail $ "Unexpected number of arguments: expected 1 but got " ++ show (length args)
+        _ -> fail $ "Unexpected number of arguments: expected 1 but got " <> show (length args)

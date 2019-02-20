@@ -92,7 +92,7 @@ irType ty = error $ show ty
 stringPtr :: M.MonadModuleBuilder m => String -> AST.Name -> m AST.Operand
 stringPtr str nm = do
     let asciiVals = map (fromIntegral . ord) str
-        llvmVals  = map (Cst.Int 8) (asciiVals ++ [0])
+        llvmVals  = map (Cst.Int 8) (asciiVals <> [0])
         char      = T.IntegerType 8
         charStar  = T.ptr char
         charArray = Cst.Array char llvmVals
@@ -175,4 +175,4 @@ mangleType (Ty.TCon (Ty.TC ty)) = [head ty]
 
 mangleFunction :: String -> [Ty.Type] -> Ty.Type -> String
 mangleFunction name args ret_ty =
-    name ++ "_" ++ concatMap mangleType args ++ "_" ++ mangleType ret_ty
+    name <> "_" <> concatMap mangleType args <> "_" <> mangleType ret_ty
