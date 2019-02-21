@@ -61,6 +61,8 @@ instance Show Pos where
 instance Ord Pos where
     compare Pos{ line = l1, column = c1 } Pos{ line = l2, column = c2 } =
         compare l1 l2 <> compare c1 c2
+nullPos :: Pos
+nullPos = Pos 0 0 Nothing
 
 data Range = Range {
     start :: !Pos,
@@ -68,6 +70,8 @@ data Range = Range {
 } deriving (Eq, Ord)
 instance Show Range where
     show Range{ start, end } = show start <> "-" <> show end
+nullRange :: Range
+nullRange = Range nullPos nullPos
 
 newtype Parser a = Parser
     ((String, Pos) -> ParseResult (a, (String, Pos)))

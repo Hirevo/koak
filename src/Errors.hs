@@ -16,6 +16,7 @@ data Error =
     | AssignError
     | NotImplTraitError Type Trait
     | TraitNotInScopeError Trait
+    | CantSpecializeError Name Type Type
     deriving (Eq)
 instance Show Error where
     show = \case
@@ -32,6 +33,9 @@ instance Show Error where
             "AssignError (expected identifier on the left-hand side of an assignment)"
         NotImplTraitError ty trait ->
             "NotImplTraitError: The type '" <> show ty <> "' does not implement the '"
-                <> show trait <> "' trait."
+                <> show trait <> "' trait"
         TraitNotInScopeError trait ->
-            "TraitNotInScopeError: The trait '" <> show trait <> "' is not defined."
+            "TraitNotInScopeError: The trait '" <> show trait <> "' is not defined"
+        CantSpecializeError name gen con ->
+            "CantSpecializeError: (could not specialize '" <> name <> "' of type " <> show gen
+                <> " for type " <> show con

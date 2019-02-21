@@ -7,7 +7,6 @@ import Types
 import Parser.Lib
 import Parser.Lang
 import Passes.Annotation
-import Passes.Inference
 import Control.Monad.State.Lazy
 import Control.Exception.Base
 import System.Exit
@@ -72,11 +71,6 @@ main = flip catchIOError (\err -> do
                     -- putStrLn "AST:"
                     -- putStrLn (show ast)
                     -- putStrLn ""
-                    -- case ast |> inferAST of
-                    --     (Left err, env) -> (show err <> "\nEnv: " <> show env) |> fail
-                    --     (Right types, env) -> (show types <> "\nEnv: " <> show env) |> putStrLn
-                    --     -- Left err -> err |> show |> fail
-                    --     -- Right types -> types |> show |> putStrLn
                     case ast |> annotateAST of
                         Left err -> err |> show |> fail
                         Right types -> -- do

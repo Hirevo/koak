@@ -1,15 +1,19 @@
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 module Codegen.Utils where
 
 import Misc
 import Annotation
+import Control.Monad.Except
 import Control.Monad.State.Lazy
 import Control.Applicative
 
 import Data.Char (ord)
 
 import qualified Types as Ty
+import qualified Parser.Lib as L
 import qualified Parser.Lang as P
 import qualified LLVM.AST as AST
 import qualified LLVM.AST.Constant as Cst
@@ -25,7 +29,7 @@ import qualified Data.Map as Map
 
 data FnDecl = FnDecl {
     ty :: Ty.Type,
-    body :: Maybe (P.Stmt Ty.Type),
+    body :: Maybe (P.Stmt (L.Range, Ty.Type)),
     impls :: Map.Map Ty.Type AST.Operand
 } deriving (Show, Eq)
 data Env = Env {
@@ -33,41 +37,47 @@ data Env = Env {
     decls :: Map.Map Ty.Name FnDecl,
     exprs :: [(Ty.Type, AST.Operand)]
 } deriving (Show, Eq)
+newtype CodegenTopLevel a = CodegenTopLevel {
+    unCodegenTopLevel :: M.ModuleBuilderT (State Env) a
+} deriving (Functor, Applicative, Monad, MonadFix, MonadState Env, M.MonadModuleBuilder)
+newtype Codegen a = Codegen {
+    unCodegen :: Mn.IRBuilderT CodegenTopLevel a
+}  deriving (Functor, Applicative, Monad, MonadFix, MonadState Env, M.MonadModuleBuilder, Mn.MonadIRBuilder)
 
-newScope, dropScope :: State Env ()
+newScope, dropScope :: MonadState Env m => m ()
 newScope = modify $ \env -> env { vars = Map.empty : vars env }
 dropScope = modify $ \env -> env { vars = tail $ vars env }
+withScope :: MonadState Env m => m a -> m a
+withScope action = do
+    newScope
+    ret <- action
+    dropScope
+    return ret
 
-pushDecl :: Ty.Name -> Ty.Type -> Maybe (P.Stmt Ty.Type) -> State Env ()
+pushDecl :: MonadState Env m => Ty.Name -> Ty.Type -> Maybe (P.Stmt (L.Range, Ty.Type)) -> m ()
 pushDecl name ty body = modify $ \env -> env { decls = Map.insert name FnDecl{ ty, body, impls = Map.empty } $ decls env }
-pushImpl :: Ty.Name -> Ty.Type -> AST.Operand -> State Env ()
-pushImpl name ty op = modify $ \env -> env { decls = Map.adjust (\elem -> elem { impls = Map.insert ty op $ impls elem }) name $ decls env }
-pushDeclAndImpl :: Ty.Name -> Ty.Type -> (Ty.Type, AST.Operand) -> State Env ()
+pushImpl :: MonadState Env m => Ty.Name -> Ty.Type -> AST.Operand -> m ()
+pushImpl name ty op = modify $ \env -> env { decls = Map.adjust (\el -> el { impls = Map.insert ty op $ impls el }) name $ decls env }
+pushDeclAndImpl :: MonadState Env m => Ty.Name -> Ty.Type -> (Ty.Type, AST.Operand) -> m ()
 pushDeclAndImpl name ty (impl_ty, op) = modify $ \env -> env { decls = Map.insert name FnDecl{ ty, body = Nothing, impls = Map.singleton impl_ty op } $ decls env }
-pushVar :: Ty.Name -> Ty.Type -> AST.Operand -> State Env ()
+pushVar :: MonadState Env m => Ty.Name -> Ty.Type -> AST.Operand -> m ()
 pushVar name ty operand = modify $ \env ->
     if null $ vars env
         then env { vars = [Map.singleton name (ty, operand)] }
         else env { vars = Map.insert name (ty, operand) (head $ vars env) : tail (vars env) }
-pushExpr :: (Ty.Type, AST.Operand) -> State Env ()
+pushExpr :: MonadState Env m => (Ty.Type, AST.Operand) -> m ()
 pushExpr expr = modify $ \env -> env { exprs = expr : exprs env }
 
-getVar :: Ty.Name -> State Env (Maybe (Ty.Type, AST.Operand))
+getVar :: MonadState Env m => Ty.Name -> m (Maybe (Ty.Type, AST.Operand))
 getVar name = gets $ \env -> env |> vars |> map (Map.lookup name) |> foldl (<|>) Nothing
-getDecl :: Ty.Name -> State Env (Maybe FnDecl)
+getDecl :: MonadState Env m => Ty.Name -> m (Maybe FnDecl)
 getDecl name = gets $ \env -> env |> decls |> Map.lookup name
-getImpl :: Ty.Name -> Ty.Type -> State Env (Maybe AST.Operand)
+getImpl :: MonadState Env m => Ty.Name -> Ty.Type -> m (Maybe AST.Operand)
 getImpl name ty = do
     maybe_defn <- gets $ \env -> env |> decls |> Map.lookup name
     return $ do
         defn <- maybe_defn
         Map.lookup ty $ impls defn
-
-class Codegen a where
-    codegen :: a -> Mn.IRBuilderT (M.ModuleBuilderT (State Env)) AST.Operand
-
-class CodegenTopLevel a where
-    codegenTopLevel :: a -> M.ModuleBuilderT (State Env) AST.Operand
 
 int, double, bool, void :: T.Type
 int = T.i64

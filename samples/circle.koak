@@ -10,4 +10,3 @@ for y = -sradius + 1.0, y < sradius, y = y + 1.0 in
         (sx = x * x) : (if sqrt(sx + sy) < sradius
             then (putchar(42) : putchar(42))
             else (putchar(32) : putchar(32)))) : putchar(10);
-

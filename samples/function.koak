@@ -1,5 +1,8 @@
 
-def add2(x: int): int
-    x + 2;
+def add(a:int b:int): int
+    a + b;
+
+def add2(a:int): int
+    add(a, 2);
 
 add2(4);

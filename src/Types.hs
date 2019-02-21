@@ -81,6 +81,7 @@ builtinBinaryOps = Map.fromList [
         ( "-", TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"),
         ( "*", TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"),
         ( "/", TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"),
+        ( "%", TFun (Map.fromList [("T", ["Num"])]) ["T", "T"] "T"),
         ( "<", TFun (Map.fromList [("T", ["Ord"])]) ["T", "T"] int),
         ( ">", TFun (Map.fromList [("T", ["Ord"])]) ["T", "T"] int),
         ("==", TFun (Map.fromList [("T", ["Eq"])]) ["T", "T"] int),
