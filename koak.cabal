@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5281271e6d856c3fdbbe2ae759765a7e79e6197367f00e9c081d8188d8a0c1d5
+-- hash: e11a6d935ff4013ebdbb72cc860df779ec24f9fe386f8896af2db94b6bfa6ff9
 
 name:           koak
 version:        0.1.0.0
@@ -40,9 +40,9 @@ executable koak
       base >=4.7 && <5
     , bytestring
     , containers
-    , llvm-hs >=7
+    , llvm-hs >=6
     , llvm-hs-pretty
-    , llvm-hs-pure >=7
+    , llvm-hs-pure
     , mtl
     , process
     , text
