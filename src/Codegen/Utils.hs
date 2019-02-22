@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -42,7 +42,7 @@ newtype CodegenTopLevel a = CodegenTopLevel {
 } deriving (Functor, Applicative, Monad, MonadFix, MonadState Env, M.MonadModuleBuilder)
 newtype Codegen a = Codegen {
     unCodegen :: Mn.IRBuilderT CodegenTopLevel a
-}  deriving (Functor, Applicative, Monad, MonadFix, MonadState Env, M.MonadModuleBuilder, Mn.MonadIRBuilder)
+}  deriving (Functor, Applicative, Monad, MonadFix, MonadState Env, Mn.MonadIRBuilder)
 
 newScope, dropScope :: MonadState Env m => m ()
 newScope = modify $ \env -> env { vars = Map.empty : vars env }
@@ -179,6 +179,17 @@ externVarArgs nm argtys retty = do
     }
     let funty = T.ptr $ AST.FunctionType retty (map snd argtys) True
     pure $ AST.ConstantOperand $ Cst.GlobalReference funty nm
+
+global :: M.MonadModuleBuilder m
+    => AST.Name -> T.Type -> Cst.Constant -> m AST.Operand
+global nm ty initVal = do
+    M.emitDefn $ AST.GlobalDefinition Glb.globalVariableDefaults {
+        Glb.name                  = nm,
+        Glb.type'                 = ty,
+        Glb.linkage               = Lnk.External,
+        Glb.initializer           = Just initVal
+    }
+    pure $ AST.ConstantOperand $ Cst.GlobalReference (T.ptr ty) nm
 
 mangleType :: Ty.Type -> String
 mangleType (Ty.TCon (Ty.TC ty)) = [head ty]

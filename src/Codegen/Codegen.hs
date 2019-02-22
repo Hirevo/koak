@@ -72,7 +72,7 @@ codegenStmt = \case
         maybe_var <- U.getVar name
         case maybe_var of
             Nothing -> do
-                var <- M.global (AST.mkName name) ir_type (U.defaultValue ty)
+                var <- U.global (AST.mkName name) ir_type (U.defaultValue ty)
                 U.pushVar name ty var
                 blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.unCodegen $ do
                     entry <- Mn.block `Mn.named` "entry"
