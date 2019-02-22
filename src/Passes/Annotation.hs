@@ -65,12 +65,12 @@ annotateArg (Ann range (P.Arg name ty)) = do
 
 annotateStmt :: Ann L.Range (P.Stmt L.Range) -> Annotate (Ann (L.Range, Type) (P.Stmt (L.Range, Type)))
 annotateStmt = \case
-    Ann range (P.Defn defnTy name args ret_ty body) ->
+    Ann range (P.Defn defn_ty name args ret_ty body) ->
         withScope $ do
             annotated_args <- mapM annotateArg args
             let tys = map (snd . annotation) annotated_args
             let ty = TFun Map.empty tys ret_ty
-            let (getf, pushf) = case defnTy of
+            let (getf, pushf) = case defn_ty of
                  P.Function -> (getFnDef, pushFnDef)
                  P.Unary _ -> (getUnOp, pushUnOp)
                  P.Binary _ -> (getBinOp, pushBinOp)
@@ -81,7 +81,7 @@ annotateStmt = \case
             annotated_body <- annotateExpr body
             let inferred = snd (annotation annotated_body)
             if inferred == ret_ty
-                then return $ Ann (range, ty) $ P.Defn defnTy name annotated_args ret_ty annotated_body
+                then return $ Ann (range, ty) $ P.Defn defn_ty name annotated_args ret_ty annotated_body
                 else throwError $ TypeError ret_ty inferred
     Ann range (P.Expr expr) -> do
         annotated_expr <- annotateExpr expr

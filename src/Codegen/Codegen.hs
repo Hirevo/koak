@@ -43,8 +43,8 @@ codegenLiteral = \case
 
 codegenStmt :: Ann (L.Range, Ty.Type) (P.Stmt (L.Range, Ty.Type)) -> U.CodegenTopLevel AST.Operand
 codegenStmt = \case
-    Ann (_, fn_ty) (P.Defn defnTy name args ret_ty body) -> mdo
-        let final_name = case defnTy of
+    Ann (_, fn_ty) (P.Defn defn_ty name args ret_ty body) -> mdo
+        let final_name = case defn_ty of
              P.Function -> name
              P.Unary _ -> "unary_" <> name
              P.Binary _ -> "binary_" <> name
