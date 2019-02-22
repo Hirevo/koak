@@ -3,14 +3,15 @@ module Main where
 
 import Annotation
 import Misc
-import Types
-import Parser.Lib
-import Parser.Lang
+import Types hiding (void)
+import Parser.Lib hiding (Parser)
+import Parser.Lang hiding (argument)
 import Passes.Annotation
 import Control.Monad.State.Lazy
 import Control.Exception.Base
 import System.Exit
 import Debug.Trace
+import Options.Applicative
 
 import Codegen.Codegen (codegenAST)
 import System.Environment (getArgs)
@@ -56,50 +57,94 @@ printBuiltinOps = do
                     |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
     putStrLn ""
 
+data Options = Options {
+    output      :: Maybe String,
+    llvm_ir     :: Maybe String,
+    bitcode     :: Maybe String,
+    quiet       :: Bool,
+    filename    :: String
+}
+
+optsParser :: Parser Options
+optsParser = Options
+    <$> optional (strOption $ long "output"
+                           <> short 'o'
+                           <> metavar "FILE"
+                           <> help "Write executable to FILE")
+    <*> optional (strOption $ long "llvm-ir"
+                           <> metavar "FILE"
+                           <> help "Write LLVM-IR to FILE")
+    <*> optional (strOption $ long "bitcode"
+                           <> metavar "FILE"
+                           <> help "Write LLVM bitcode to FILE")
+    <*> switch (long "silent"
+                <> short 's'
+                <> help "Disable the JIT execution")
+    <*> argument str (metavar "SOURCE_FILE")
+
 main :: IO ()
 main = flip catchIOError (\err -> do
         hPutStrLn stderr $ "error: " <> ioeGetErrorString err
         exitWith (ExitFailure 84)) $ do
-    args <- getArgs
-    case args of
-        [arg] -> do
-            parseResult <- arg |> parseFile program
-                               |> flip catchIOError (\_ -> ioError $ userError $ "No such source file: " <> arg)
-            -- printBuiltinOps
-            case parseResult of
-                Parsed (ast, _) -> -- do
-                    -- putStrLn "AST:"
-                    -- putStrLn (show ast)
-                    -- putStrLn ""
-                    case ast |> annotateAST of
-                        Left err -> err |> show |> fail
-                        Right types -> -- do
-                            -- putStrLn "Type-checked successfully !"
-                            -- putStrLn "Expression types:"
-                            -- types |> map (show . annotation)
-                            --       |> intercalate "\n"
-                            --       |> putStrLn
-                            Ctx.withContext $ \ctx -> do
-                                let mod = codegenAST types
-                                -- mod |> ppllvm |> unpack |> putStrLn
-                                -- mod |> ppllvm |> unpack |> writeFile "out.ll"
-                                Mdl.withModuleFromAST ctx mod $ \mod' ->
-                                    withJIT ctx $ \ecjit -> EE.withModuleInEngine ecjit mod' $ \ee -> do
-                                        mainfn <- EE.getFunction ee (AST.mkName "main")
-                                        case mainfn of
-                                            Just fn -> Control.Monad.void $ run fn
-                                            Nothing -> return ()
-                                        -- Tgt.withHostTargetMachine $ \tgt ->
-                                        --     Mdl.writeObjectToFile tgt (Mdl.File "out.o") mod'
-                                -- Pcs.callCommand "cc -O3 out.ll -lm"
-                err@(NotParsed Pos{ file = Just file, line, column } _) -> do
-                    contents <- readFile file
-                    let ln = contents |> lines |> (!! (line - 1))
-                    let col = column - 1
-                    let padding = '~' |> repeat |> take col
-                    let line_nb = show line
-                    let pre_pad = take (length line_nb) (repeat ' ')
-                    fail (show err <> "\n " <> pre_pad <> " |\n " <> line_nb <> " | " <> ln <> "\n "
-                        <> pre_pad <> " | " <> take col padding <> "^")
-                err -> err |> show |> fail
-        _ -> fail $ "Unexpected number of arguments: expected 1 but got " <> show (length args)
+
+    opts <- execParser $ info
+        (optsParser <**> helper)
+        (fullDesc <> progDesc "Compiles a KOAK source file (potentially executes it with a JIT)"
+                  <> header "koak - The KOAK language compiler"
+                  <> failureCode 84)
+    let arg = filename opts
+    parseResult <- arg |> parseFile program
+                       |> flip catchIOError (\_ -> ioError $ userError $ "No such source file: " <> arg)
+    -- printBuiltinOps
+    case parseResult of
+        Parsed (ast, _) -> -- do
+            -- putStrLn "AST:"
+            -- putStrLn (show ast)
+            -- putStrLn ""
+            case ast |> annotateAST of
+                Left err -> err |> show |> fail
+                Right types -> -- do
+                    -- putStrLn "Type-checked successfully !"
+                    -- putStrLn "Expression types:"
+                    -- types |> map (show . annotation)
+                    --       |> intercalate "\n"
+                    --       |> putStrLn
+                    Ctx.withContext $ \ctx -> do
+                        let mod = codegenAST types
+                        -- mod |> ppllvm |> unpack |> putStrLn
+                        case llvm_ir opts of
+                            Just ir_file -> do
+                                let ir = mod |> ppllvm |> unpack
+                                ir |> writeFile ir_file
+                                case output opts of
+                                    Just file -> void (ir |> Pcs.readCreateProcess
+                                        (Pcs.shell $ "cc -O3 -xir - -o '" <> file <> "' -lm"))
+                                    Nothing -> return ()
+                            Nothing -> case output opts of
+                                    Just file ->
+                                        void (Pcs.readCreateProcess
+                                            (Pcs.shell $ "cc -O3 -xir - -o '" <> file <> "' -lm")
+                                            (mod |> ppllvm |> unpack))
+                                    Nothing -> return ()
+                        Mdl.withModuleFromAST ctx mod $ \mod' -> do
+                            case bitcode opts of
+                                Just bc_file -> Mdl.writeBitcodeToFile (Mdl.File bc_file) mod'
+                                Nothing -> return ()
+                            case quiet opts of
+                                True -> return ()
+                                False -> withJIT ctx $ \ecjit -> EE.withModuleInEngine ecjit mod' $ \ee -> do
+                                    mainfn <- EE.getFunction ee (AST.mkName "main")
+                                    case mainfn of
+                                        Just fn -> Control.Monad.void $ run fn
+                                        Nothing -> return ()
+        err@(NotParsed Pos{ file = Just file, line, column } _) -> do
+            contents <- readFile file
+            let ln = contents |> lines |> (!! (line - 1))
+            let col = column - 1
+            let padding = '~' |> repeat |> take col
+            let line_nb = show line
+            let pre_pad = take (length line_nb) (repeat ' ')
+            fail (show err <> "\n " <> pre_pad <> " |\n " <> line_nb <> " | " <> ln <> "\n "
+                <> pre_pad <> " | " <> take col padding <> "^")
+        err -> err |> show |> fail
+        -- _ -> fail $ "Unexpected number of arguments: expected 1 but got " <> show (length args)

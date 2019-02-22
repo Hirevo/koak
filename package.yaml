@@ -21,6 +21,7 @@ dependencies:
   - containers
   - bytestring
   - process
+  - optparse-applicative
 
 executables:
   koak:

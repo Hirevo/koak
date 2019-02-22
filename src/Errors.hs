@@ -39,3 +39,10 @@ instance Show Error where
         CantSpecializeError name gen con ->
             "CantSpecializeError: (could not specialize '" <> name <> "' of type " <> show gen
                 <> " for type " <> show con
+
+-- Usable to find close matches for NotInScope errors.
+levenshtein :: String -> String -> Int
+levenshtein a b | min (length a) (length b) == 0 = max (length a) (length b)
+levenshtein (a:as) (b:bs) = minimum [ levenshtein as (b:bs) + 1,
+                                      levenshtein (a:as) bs + 1,
+                                      levenshtein as bs + if a == b then 0 else 1 ]
