@@ -71,7 +71,7 @@ prelude = do
     U.pushDecl "binary_>" ty2 Nothing
     U.pushDecl "binary_==" ty3 Nothing
     U.pushDecl "binary_!=" ty3 Nothing
-    U.pushDecl "binary_:" ty4 (Just (P.Defn P.Binary "binary_:"
+    U.pushDecl "binary_:" ty4 (Just (P.Defn (P.Binary (P.LeftAssoc 25)) "binary_:"
         [Ann (L.nullRange, "T") (P.Arg "a" "T"), Ann (L.nullRange, "U") (P.Arg "b" "U")] "U"
         (Ann (L.nullRange, "U") (P.Ident "b"))))
     U.pushDecl "unary_-" ty5 Nothing

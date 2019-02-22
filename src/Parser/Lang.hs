@@ -28,7 +28,20 @@ intoParser = flip evalStateT
 
 type AST a = [Ann a (Stmt a)]
 data Arg = Arg String Type deriving (Show, Eq)
-data DefnType = Function | Unary | Binary deriving (Show, Eq)
+data DefnType =
+    Function
+    | Unary Int
+    | Binary (Assoc Int)
+    deriving (Show, Eq)
+
+data Assoc a =
+    LeftAssoc a
+    | RightAssoc a
+    deriving (Show, Eq, Ord)
+precedence :: Assoc a -> a
+precedence = \case
+    LeftAssoc i -> i
+    RightAssoc i -> i
 
 data Stmt a =
     Defn DefnType String [Ann a Arg] Type (Ann a (Expr a))
@@ -60,15 +73,6 @@ withRangeT parser = do
     ret <- parser
     end <- lift currentPos
     return (ret, Range { start, end })
-
-data Assoc a =
-    LeftAssoc a
-    | RightAssoc a
-    deriving (Show, Eq, Ord)
-precedence :: Assoc a -> a
-precedence = \case
-    LeftAssoc i -> i
-    RightAssoc i -> i
 
 defaultPrecedenceMap :: PrecMap
 defaultPrecedenceMap = PrecMap {
@@ -238,9 +242,7 @@ parseBinOp lhs minPrec = do
     let outer lhs minPrec = fallback (fst lhs) $ do
          optSpacing
          (_, prec) <- peek pBinOp
-         let iprec = case prec of
-              LeftAssoc i -> i
-              RightAssoc i -> i
+         let iprec = precedence prec
          if iprec < minPrec then empty else fallback (fst lhs) $ do
              optSpacing
              ((op, prec), op_range) <- withRange pBinOp
@@ -349,7 +351,7 @@ defnUnaryStatment = do
         un_prec = (name, prec) : un_prec s,
         bin_prec = bin_prec s
     }
-    return $ Ann range $ Defn Unary name [rhs] ret_ty body
+    return $ Ann range $ Defn (Unary prec) name [rhs] ret_ty body
 
 defnBinaryStatment :: KoakParser (Ann Range (Stmt Range))
 defnBinaryStatment = do
@@ -378,7 +380,7 @@ defnBinaryStatment = do
         un_prec = un_prec s,
         bin_prec = (name, prec) : bin_prec s
     }
-    return $ Ann range $ Defn Binary name [lhs, rhs] ret_ty body
+    return $ Ann range $ Defn (Binary prec) name [lhs, rhs] ret_ty body
 
 defnFuncStatment :: KoakParser (Ann Range (Stmt Range))
 defnFuncStatment = do

@@ -46,8 +46,8 @@ codegenStmt = \case
     Ann (_, fn_ty) (P.Defn defnTy name args ret_ty body) -> mdo
         let final_name = case defnTy of
              P.Function -> name
-             P.Unary -> "unary_" <> name
-             P.Binary -> "binary_" <> name
+             P.Unary _ -> "unary_" <> name
+             P.Binary _ -> "binary_" <> name
         let ir_args = map (\(Ann (_, ty) (P.Arg name _)) -> (AST.mkName name, U.irType ty)) args
         let ir_type = ret_ty |> U.irType
         U.pushDeclAndImpl final_name fn_ty (fn_ty, fn)

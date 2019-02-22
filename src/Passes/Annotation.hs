@@ -72,8 +72,8 @@ annotateStmt = \case
             let ty = TFun Map.empty tys ret_ty
             let (getf, pushf) = case defnTy of
                  P.Function -> (getFnDef, pushFnDef)
-                 P.Unary -> (getUnOp, pushUnOp)
-                 P.Binary -> (getBinOp, pushBinOp)
+                 P.Unary _ -> (getUnOp, pushUnOp)
+                 P.Binary _ -> (getBinOp, pushBinOp)
             maybe_fn <- getf name
             case maybe_fn of
                 Just ty2 -> throwError $ MultipleDefnError name [ty2, ty]
