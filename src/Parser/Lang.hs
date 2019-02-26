@@ -126,7 +126,7 @@ identifier = (:) <$> (lower <|> upper) <*> many (lower <|> upper <|> digit)
 
 primitiveType :: Parser Type
 primitiveType =
-    (const Ty.int <$> pString "int")
+    (const Ty.int <$> pString "integer")
     <|> (const Ty.double <$> pString "double")
     <|> (const Ty.bool <$> pString "bool")
     <|> (const Ty.void <$> pString "void")
