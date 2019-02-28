@@ -160,7 +160,7 @@ functionType = do
     return (args :-> ret_ty)
 
 typeName :: Parser Type
-typeName = primitiveType -- <|> functionType
+typeName = primitiveType <|> functionType
 
 integer :: Parser Int
 integer = do

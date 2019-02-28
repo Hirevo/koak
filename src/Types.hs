@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 module Types where
@@ -22,7 +21,7 @@ instance IsString TCon where
     fromString = TC
 
 int, double, bool, void :: Type
-int = TCon "int"
+int = TCon "integer"
 double = TCon "double"
 bool = TCon "bool"
 void = TCon "void"
@@ -113,18 +112,20 @@ isImplConstraint _ = False
 
 newtype Subst =
     Subst (Map.Map Type Type)
-    deriving (Show, Eq, Semigroup)
+    deriving (Show, Eq)
 instance Substitutable Subst where
     applySubst s (Subst target) = Subst (fmap (applySubst s) target)
     freeTypeVars (Subst tvars) = tvars |> Map.keys
                                        |> filter isTVar
                                        |> map (\(TVar tv) -> tv)
                                        |> Set.fromList
-instance Monoid Subst where
-    mappend subst1 subst2 = Subst (s1 <> s2)
+instance Semigroup Subst where
+    subst1 <> subst2 = Subst (s1 <> s2)
         where
             Subst s1 = subst1
             Subst s2 = applySubst subst1 subst2
+instance Monoid Subst where
+    mappend = (<>)
     mempty = Subst Map.empty
 
 getSubst :: Type -> Subst -> Maybe Type
@@ -143,12 +144,12 @@ instance Substitutable a => Substitutable [a] where
     freeTypeVars = Set.unions . map freeTypeVars
 
 traitsTable :: Map.Map Trait ([TCon], TCon)
-traitsTable = Map.fromList [ ("Num",        (["int", "double"], "int")),
-                             ("Integral",   (["int"], "int")),
+traitsTable = Map.fromList [ ("Num",        (["integer", "double"], "integer")),
+                             ("Integral",   (["integer"], "integer")),
                              ("Fractional", (["double"], "double")),
-                             ("Eq",         (["int", "double", "bool"], "int")),
-                             ("Ord",        (["int", "double"], "int")),
-                             ("Default",    (["int", "double", "bool"], "int"))]
+                             ("Eq",         (["integer", "double", "bool"], "integer")),
+                             ("Ord",        (["integer", "double"], "integer")),
+                             ("Default",    (["integer", "double", "bool"], "integer"))]
 
 builtinBinaryOps :: [(Name, Scheme)]
 builtinBinaryOps = [

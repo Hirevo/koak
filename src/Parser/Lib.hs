@@ -6,8 +6,6 @@ module Parser.Lib where
 import Misc
 import Control.Applicative
 import Control.Monad
-import System.IO.Unsafe (unsafePerformIO)
-import Debug.Trace
 
 data ParseError =
     NotMatched String

@@ -86,16 +86,16 @@ bool = T.i1
 void = T.void
 
 defaultValue :: Ty.Type -> Cst.Constant
-defaultValue (Ty.TCon (Ty.TC "int")) = Cst.Int 64 0
+defaultValue (Ty.TCon (Ty.TC "integer")) = Cst.Int 64 0
 defaultValue (Ty.TCon (Ty.TC "double")) = Cst.Float (Flt.Double 0)
 defaultValue (Ty.TCon (Ty.TC "bool")) = Cst.Int 1 0
 
 irType :: Ty.Type -> T.Type
-irType (Ty.TCon (Ty.TC "int")) = int
+irType (Ty.TCon (Ty.TC "integer")) = int
 irType (Ty.TCon (Ty.TC "double")) = double
 irType (Ty.TCon (Ty.TC "bool")) = bool
 irType (Ty.TCon (Ty.TC "void")) = Codegen.Utils.void
-irType (args Ty.:-> ret_ty) = T.FunctionType (irType ret_ty) (args |> map irType) False
+irType (args Ty.:-> ret_ty) = T.ptr $ T.FunctionType (irType ret_ty) (args |> map irType) False
 irType ty = error $ show ty
 
 -- | An constant static string pointer
@@ -193,6 +193,7 @@ global nm ty initVal = do
 
 mangleType :: Ty.Type -> String
 mangleType (Ty.TCon (Ty.TC ty)) = [head ty]
+mangleType (t1s Ty.:-> t2) = "f" <> concatMap mangleType t1s <> "r" <> mangleType t2 <> "e"
 
 mangleFunction :: String -> [Ty.Type] -> Ty.Type -> String
 mangleFunction name args ret_ty =

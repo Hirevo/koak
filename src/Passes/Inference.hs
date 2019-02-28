@@ -15,10 +15,7 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 
-import Data.Maybe (fromJust)
-import Data.List (nub, partition)
-import Debug.Trace (trace)
-import System.IO.Unsafe (unsafePerformIO)
+import Data.List (partition)
 
 import Types as T
 
@@ -193,21 +190,33 @@ inferExpr = \case
             return $ Ann (range, tv)
                    $ P.While inferred_cond inferred_body
     Ann range (P.Call (Ann range2 name) args) -> do
-        prototype <- join $ gets $ \env -> env |> fn_defs |> lookupEnv name
-        inferred_args <- mapM inferExpr args
-        let args_tys = map (snd . annotation) inferred_args
-        ret_ty <- apply prototype args_tys
-        return $ Ann (range, ret_ty)
-               $ P.Call (Ann (range2, prototype) name) inferred_args
+        maybe_scheme <- gets $ \env -> (vars env <> [fn_defs env]) |> fmap (lookupScheme name)
+                                                                   |> foldl (<|>) Nothing
+        case maybe_scheme of
+            Just scheme -> do
+                prototype <- instantiate scheme
+                inferred_args <- mapM inferExpr args
+                let args_tys = map (snd . annotation) inferred_args
+                ret_ty <- apply prototype args_tys
+                return $ Ann (range, ret_ty)
+                       $ P.Call (Ann (range2, prototype) name) inferred_args
+            Nothing -> throwError $ NotInScopeError name
     Ann range (P.Bin (Ann range2 "=") lhs rhs) ->
         case lhs of
             Ann range3 (P.Ident name) -> do
                 tv <- fresh
                 inferred_rhs <- inferExpr rhs
                 pushConstraint $ Matches tv $ snd $ annotation inferred_rhs
-                pushVar name ([] :=> tv)
-                return $ Ann (range, tv)
-                       $ P.Bin (Ann (range2, [tv] :-> tv) "=") (Ann (range3, tv) (P.Ident name)) inferred_rhs
+                let lhs_inference = do
+                     inferred_lhs <- inferExpr lhs
+                     pushConstraint $ Matches tv $ snd $ annotation inferred_lhs
+                     pushVar name ([] :=> tv)
+                     return $ Ann (range, tv)
+                            $ P.Bin (Ann (range2, [tv] :-> tv) "=") inferred_lhs inferred_rhs
+                lhs_inference `catchError` \_ -> do
+                    pushVar name ([] :=> tv)
+                    return $ Ann (range, tv)
+                           $ P.Bin (Ann (range2, [tv] :-> tv) "=") (Ann (range3, tv) (P.Ident name)) inferred_rhs
             _ -> throwError AssignError
     Ann range (P.Bin (Ann range2 name) lhs rhs) -> do
         prototype <- join $ gets $ \env -> env |> bin_ops |> lookupEnv name
@@ -275,7 +284,15 @@ apply (t1s :-> t2) t3s | length t1s == length t3s = do
     return t2
 apply (t1s :-> _) t3s =
     throwError $ ArgCountError (length t1s) (length t3s)
-apply _ _ = error "Non-function call application"
+apply (TVar t) t3s = do
+    ret_tv <- fresh
+    args <- forM t3s $ \t3 -> do
+        tv <- fresh
+        pushConstraint $ Matches tv t3
+        return tv
+    pushConstraint $ Matches (TVar t) (args :-> ret_tv)
+    return ret_tv
+apply t1 t2 = error $ "Non-function call application: " <> show t1 <> " onto " <> show t2
 
 (<<>>) :: TVar -> Type -> Solve Subst
 name <<>> (TVar v) | boundToSelf = return mempty
@@ -349,11 +366,14 @@ solveConstraints = do
     (su, constraints) <- get
     case constraints of
         [] -> return su
-        (Matches var ty: cs) -> do
+        (Matches var ty : cs) -> do
             su1 <- unifies var ty
-            put (su1 <> applySubst su1 su, applySubst su1 cs)
+            put (su1 <> su, applySubst su1 cs)
             solveConstraints
-        (Implements var traits: cs) ->
+        (Implements var [] : cs) -> do
+            put (su, cs)
+            solveConstraints
+        (Implements var traits : cs) ->
             case var of
                 TVar _ -> case getSubst var su of
                     Just (TCon tc) -> do
@@ -363,18 +383,15 @@ solveConstraints = do
                     Just (TVar _) | remains var cs -> do
                         put (su, cs <> [Implements var traits])
                         solveConstraints
-                    Just (TVar tv) -> do -- error "Unresolved type variable"
+                    Just (TVar _) -> do
                         let action trait = do
                              def <- defaultTraitType trait
                              let TCon tc = def
                              implementsTraits traits tc
                              return def
-                        ty <- traits |> map action |> foldl1 (<|>)
+                        ty <- traits |> map action |> foldl (<|>) (throwError CantInferType) -- TODO: Add location infos
                         let su1 = Subst (Map.singleton var ty)
-                        seq (unsafePerformIO $ putStrLn $ show su1) (return ())
-                        seq (unsafePerformIO $ putStrLn $ show traits) (return ())
-                        seq (unsafePerformIO $ putStrLn $ show cs) (return ())
-                        put (su1 <> applySubst su1 su, applySubst su1 cs)
+                        put (su1 <> su, applySubst su1 cs)
                         solveConstraints
                     Nothing | remains var cs -> do
                         put (su, cs <> [Implements var traits])
@@ -385,15 +402,12 @@ solveConstraints = do
                              let TCon tc = def
                              implementsTraits traits tc
                              let su1 = Subst (Map.singleton var def)
-                             put (su1 <> applySubst su1 su, applySubst su1 cs)
+                             put (su1 <>  su, applySubst su1 cs)
                              solveConstraints
                              return def
-                        ty <- traits |> map action |> foldl1 (<|>)
+                        ty <- traits |> map action |> foldl (<|>) (throwError CantInferType)
                         let su1 = Subst (Map.singleton var ty)
-                        seq (unsafePerformIO $ putStrLn $ show su1) (return ())
-                        seq (unsafePerformIO $ putStrLn $ show traits) (return ())
-                        seq (unsafePerformIO $ putStrLn $ show cs) (return ())
-                        put (su1 <> applySubst su1 su, applySubst su1 cs)
+                        put (su1 <> su, applySubst su1 cs)
                         solveConstraints
                 TCon tc -> do
                     implementsTraits traits tc

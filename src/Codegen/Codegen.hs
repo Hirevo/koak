@@ -38,37 +38,38 @@ import qualified Data.Map as Map
 
 codegenLiteral :: P.Typed P.Literal -> U.Codegen AST.Operand
 codegenLiteral = \case
-    Ann (_, Ty.TCon (Ty.TC "int")) a@(P.IntLiteral i) -> C.int64 $ fromIntegral i
+    Ann (_, Ty.TCon (Ty.TC "integer")) a@(P.IntLiteral i) -> C.int64 $ fromIntegral i
     Ann (_, Ty.TCon (Ty.TC "double")) a@(P.IntLiteral i) -> C.double $ fromIntegral i
     Ann (_, _) a@(P.DoubleLiteral d) -> C.double d
     Ann (_, _) a@P.VoidLiteral -> error "codegen VoidLiteral not implemented"
 
 codegenStmt :: P.TypedStmt -> U.CodegenTopLevel AST.Operand
 codegenStmt = \case
-    Ann (_, fn_ty) (P.Defn defn_ty name args ret_ty body) -> mdo
-        let final_name = case defn_ty of
-             P.Function -> name
-             P.Unary _ -> "unary_" <> name
-             P.Binary _ -> "binary_" <> name
-        let ir_args = map (\(Ann (_, ty) (P.Arg name _)) -> (AST.mkName name, U.irType ty)) args
-        let ir_type = ret_ty |> U.irType
-        U.pushDeclAndImpl final_name ([] Ty.:=> fn_ty) (fn_ty, fn)
-        blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ do
-            entry <- Mn.block `Mn.named` "entry"
-            op_args <- forM args $ \(Ann (_, ty) (P.Arg name _)) -> do
-                arg <- I.alloca (U.irType ty) Nothing 0
-                name <- Mn.fresh `Mn.named` toShort (pack name)
-                let ref = Op.LocalReference (U.irType ty) name
-                I.store arg 0 ref
-                return arg
-            let names = map (\(Ann _ (P.Arg name _)) -> name) args
-            let types = map (snd . annotation) args
-            op_args |> zip3 names types
-                    |> mapM (\(name, ty, arg) -> U.pushVar name ty arg)
-            ret <- codegenExpr body
-            I.ret ret
-        fn <- U.function (AST.mkName final_name) ir_args ir_type blocks
-        return fn
+    Ann (_, fn_ty) (P.Defn defn_ty name args ret_ty body) ->
+        U.withScope $ mdo
+            let final_name = case defn_ty of
+                 P.Function -> name
+                 P.Unary _ -> "unary_" <> name
+                 P.Binary _ -> "binary_" <> name
+            let ir_args = map (\(Ann (_, ty) (P.Arg name _)) -> (AST.mkName name, U.irType ty)) args
+            let ir_type = ret_ty |> U.irType
+            U.pushDeclAndImpl final_name ([] Ty.:=> fn_ty) (fn_ty, fn)
+            blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ do
+                entry <- Mn.block `Mn.named` "entry"
+                op_args <- forM args $ \(Ann (_, ty) (P.Arg name _)) -> do
+                    arg <- I.alloca (U.irType ty) Nothing 0
+                    name <- Mn.fresh `Mn.named` toShort (pack name)
+                    let ref = Op.LocalReference (U.irType ty) name
+                    I.store arg 0 ref
+                    return arg
+                let names = map (\(Ann _ (P.Arg name _)) -> name) args
+                let types = map (snd . annotation) args
+                op_args |> zip3 names types
+                        |> mapM (\(name, ty, arg) -> U.pushVar name ty arg)
+                ret <- codegenExpr body
+                I.ret ret
+            fn <- U.function (AST.mkName final_name) ir_args ir_type blocks
+            return fn
     Ann (_, ty) (P.Expr (Ann _ (P.Bin (Ann _ "=") (Ann _ (P.Ident name)) start))) -> do
         let ir_type = U.irType ty
         maybe_var <- U.getVar name
@@ -76,24 +77,20 @@ codegenStmt = \case
             Nothing -> do
                 var <- U.global (AST.mkName name) ir_type (U.defaultValue ty)
                 U.pushVar name ty var
-                blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ do
+                blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ U.withScope $ do
                     entry <- Mn.block `Mn.named` "entry"
-                    U.newScope
                     val <- codegenExpr start
                     I.store var 0 val
-                    U.dropScope
                     I.ret val
                 count <- gets $ \env -> env |> U.exprs |> length
                 fn <- U.function (AST.mkName ("__anon_" <> show count)) [] ir_type blocks
                 U.pushExpr (ty, fn)
                 return fn
             Just (_, var) -> do
-                blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ do
+                blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ U.withScope $ do
                     entry <- Mn.block `Mn.named` "entry"
-                    U.newScope
                     val <- codegenExpr start
                     I.store var 0 val
-                    U.dropScope
                     I.ret val
                 count <- gets $ \env -> env |> U.exprs |> length
                 fn <- U.function (AST.mkName ("__anon_" <> show count)) [] ir_type blocks
@@ -101,11 +98,9 @@ codegenStmt = \case
                 return fn
     Ann (_, ty) (P.Expr expr) -> do
         let ir_type = U.irType ty
-        blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ do
-            U.newScope
+        blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ U.withScope $ do
             entry <- Mn.block `Mn.named` "entry"
             ret <- codegenExpr expr
-            U.dropScope
             I.ret ret
         count <- gets $ \env -> env |> U.exprs |> length
         fn <- U.function (AST.mkName ("__anon_" <> show count)) [] ir_type blocks
@@ -120,81 +115,78 @@ codegenStmt = \case
 
 codegenExpr ::P.TypedExpr -> U.Codegen AST.Operand
 codegenExpr = \case
-    Ann (_, ty) (P.For start cond oper body) -> mdo
-        U.newScope
-        start_ret <- codegenExpr start
-        I.br for_cond_in
-        entry <- Mn.currentBlock
-        for_cond_in <- Mn.block `Mn.named` "for.cond"
-        val <- I.phi [(AST.ConstantOperand $ U.defaultValue ty, entry), (body_ret, for_body_out)]
-        cond_ret <- codegenExpr cond
-        for_cond_out <- Mn.currentBlock
-        inv_impl <- fmap fromJust $ U.getImpl "unary_!" ([snd (annotation cond)] Ty.:-> Ty.int)
-        cond_inv <- I.call inv_impl [(cond_ret, [])]
-        zero <- C.int64 0
-        bool <- I.icmp IPred.EQ cond_inv zero
-        I.condBr bool for_body_in for_end
-        for_body_in <- Mn.block `Mn.named` "for.body"
-        body_ret <- codegenExpr body
-        oper_ret <- codegenExpr oper
-        for_body_out <- Mn.currentBlock
-        I.br for_cond_in
-        for_end <- Mn.block `Mn.named` "for.end"
-        U.dropScope
-        I.phi [(val, for_cond_out)]
-    Ann (_, ty) (P.If cond then_body else_block) -> mdo
-        U.newScope
-        cond_ret <- codegenExpr cond
-        inv_impl <- fmap fromJust $ U.getImpl "unary_!" ([snd (annotation cond)] Ty.:-> Ty.int)
-        cond_inv <- I.call inv_impl [(cond_ret, [])]
-        zero <- C.int64 0
-        bool <- I.icmp IPred.EQ cond_inv zero
-        case else_block of
-            Just else_body -> mdo
-                I.condBr bool if_then_in if_else_in
-                if_then_in <- Mn.block `Mn.named` "if.then"
-                ret_then <- codegenExpr then_body
-                if_then_out <- Mn.currentBlock
-                I.br if_end
-                if_else_in <- Mn.block `Mn.named` "if.else"
-                ret_else <- codegenExpr else_body
-                if_else_out <- Mn.currentBlock
-                I.br if_end
-                if_end <- Mn.block `Mn.named` "if.end"
-                U.dropScope
-                I.phi [(ret_then, if_then_out), (ret_else, if_else_out)]
-            Nothing -> mdo
-                I.condBr bool if_then_in if_end
-                if_then_in <- Mn.block `Mn.named` "if.then"
-                ret_then <- codegenExpr then_body
-                if_then_out <- Mn.currentBlock
-                I.br if_end
-                if_end <- Mn.block `Mn.named` "if.end"
-                U.dropScope
-                I.phi [(ret_then, if_then_out)]
-    Ann (_, ty) (P.While cond body) -> mdo
-        U.newScope
-        I.br while_cond_in
-        entry <- Mn.currentBlock
-        while_cond_in <- Mn.block `Mn.named` "while.cond"
-        val <- I.phi [(AST.ConstantOperand $ U.defaultValue ty, entry), (body_ret, while_body_out)]
-        cond_ret <- codegenExpr cond
-        while_cond_out <- Mn.currentBlock
-        inv_impl <- fmap fromJust $ U.getImpl "unary_!" ([snd (annotation cond)] Ty.:-> Ty.int)
-        cond_inv <- I.call inv_impl [(cond_ret, [])]
-        izero <- C.int64 0
-        bool <- I.icmp IPred.EQ cond_inv izero
-        I.condBr bool while_body_in while_end
-        while_body_in <- Mn.block `Mn.named` "while.body"
-        body_ret <- codegenExpr body
-        while_body_out <- Mn.currentBlock
-        I.br while_cond_in
-        while_end <- Mn.block `Mn.named` "while.end"
-        U.dropScope
-        I.phi [(val, while_cond_out)]
+    Ann (_, ty) (P.For start cond oper body) ->
+        U.withScope $ mdo
+            start_ret <- codegenExpr start
+            I.br for_cond_in
+            entry <- Mn.currentBlock
+            for_cond_in <- Mn.block `Mn.named` "for.cond"
+            val <- I.phi [(AST.ConstantOperand $ U.defaultValue ty, entry), (body_ret, for_body_out)]
+            cond_ret <- codegenExpr cond
+            for_cond_out <- Mn.currentBlock
+            inv_impl <- fmap fromJust $ U.getImpl "unary_!" ([snd (annotation cond)] Ty.:-> Ty.int)
+            cond_inv <- I.call inv_impl [(cond_ret, [])]
+            zero <- C.int64 0
+            bool <- I.icmp IPred.EQ cond_inv zero
+            I.condBr bool for_body_in for_end
+            for_body_in <- Mn.block `Mn.named` "for.body"
+            body_ret <- codegenExpr body
+            oper_ret <- codegenExpr oper
+            for_body_out <- Mn.currentBlock
+            I.br for_cond_in
+            for_end <- Mn.block `Mn.named` "for.end"
+            I.phi [(val, for_cond_out)]
+    Ann (_, ty) (P.If cond then_body else_block) ->
+        U.withScope $ mdo
+            cond_ret <- codegenExpr cond
+            inv_impl <- fmap fromJust $ U.getImpl "unary_!" ([snd (annotation cond)] Ty.:-> Ty.int)
+            cond_inv <- I.call inv_impl [(cond_ret, [])]
+            zero <- C.int64 0
+            bool <- I.icmp IPred.EQ cond_inv zero
+            case else_block of
+                Just else_body -> mdo
+                    I.condBr bool if_then_in if_else_in
+                    if_then_in <- Mn.block `Mn.named` "if.then"
+                    ret_then <- codegenExpr then_body
+                    if_then_out <- Mn.currentBlock
+                    I.br if_end
+                    if_else_in <- Mn.block `Mn.named` "if.else"
+                    ret_else <- codegenExpr else_body
+                    if_else_out <- Mn.currentBlock
+                    I.br if_end
+                    if_end <- Mn.block `Mn.named` "if.end"
+                    I.phi [(ret_then, if_then_out), (ret_else, if_else_out)]
+                Nothing -> mdo
+                    I.condBr bool if_then_in if_end
+                    if_then_in <- Mn.block `Mn.named` "if.then"
+                    ret_then <- codegenExpr then_body
+                    if_then_out <- Mn.currentBlock
+                    I.br if_end
+                    if_end <- Mn.block `Mn.named` "if.end"
+                    I.phi [(ret_then, if_then_out)]
+    Ann (_, ty) (P.While cond body) ->
+        U.withScope $ mdo
+            I.br while_cond_in
+            entry <- Mn.currentBlock
+            while_cond_in <- Mn.block `Mn.named` "while.cond"
+            val <- I.phi [(AST.ConstantOperand $ U.defaultValue ty, entry), (body_ret, while_body_out)]
+            cond_ret <- codegenExpr cond
+            while_cond_out <- Mn.currentBlock
+            inv_impl <- fmap fromJust $ U.getImpl "unary_!" ([snd (annotation cond)] Ty.:-> Ty.int)
+            cond_inv <- I.call inv_impl [(cond_ret, [])]
+            izero <- C.int64 0
+            bool <- I.icmp IPred.EQ cond_inv izero
+            I.condBr bool while_body_in while_end
+            while_body_in <- Mn.block `Mn.named` "while.body"
+            body_ret <- codegenExpr body
+            while_body_out <- Mn.currentBlock
+            I.br while_cond_in
+            while_end <- Mn.block `Mn.named` "while.end"
+            I.phi [(val, while_cond_out)]
     Ann (_, ty) (P.Call (Ann _ name) args) -> mdo
-        maybe_decl <- U.getDecl name
         let prototype = map (snd . annotation) args Ty.:-> ty
+        env <- get
+        maybe_decl <- U.getDecl name
         case maybe_decl of
             Just decl ->
                 case Map.lookup prototype $ U.impls decl of
@@ -205,7 +197,15 @@ codegenExpr = \case
                         impl <- U.Codegen $ lift $ specializeFunction prototype decl
                         gen_args <- args |> mapM codegenExpr
                         gen_args |> map (, []) |> I.call impl
-            Nothing -> error $ "Function " <> show name <> " not found: " <> show prototype
+            Nothing -> do
+                var <- U.getVar name
+                case var of
+                    Just (fn_ty, ptr) | fn_ty == prototype -> do
+                        gen_args <- args |> mapM codegenExpr
+                        impl <- I.load ptr 0
+                        gen_args |> map (, []) |> I.call impl
+                    Just (fn_ty, _) -> error $ "Function " <> show name <> " has a wrong type (got: " <> show fn_ty <> ", expected: " <> show prototype <> ")"
+                    Nothing -> error $ "Function " <> show name <> " not found: " <> show prototype
     Ann (_, ty) (P.Bin (Ann _ "=") (Ann _ (P.Ident name)) start) -> do
         maybe_var <- U.getVar name
         case maybe_var of
@@ -251,16 +251,21 @@ codegenExpr = \case
             Nothing -> error $ "Function " <> show prefixed <> " not found: " <> show prototype
     Ann (_, ty) (P.Ident name) -> mdo
         found <- U.getVar name
-        maybe
-            (do env <- get
-                error $ "Variable " <> show name <> " not found: " <> show env)
-            (\(_, op) -> I.load op 0)
-            found
-    Ann (_, Ty.TCon (Ty.TC "int")) (P.Lit lit@(P.IntLiteral i)) -> C.int64 $ fromIntegral i
-    Ann (_, Ty.TCon (Ty.TC "double")) (P.Lit lit@(P.IntLiteral i)) -> C.double $ fromIntegral i
-    Ann (_, ty) (P.Lit lit@(P.DoubleLiteral d)) -> C.double d
-    Ann (_, ty) (P.Lit lit@(P.BooleanLiteral b)) -> C.bit (if b then 1 else 0)
-    Ann (_, ty) (P.Lit lit@P.VoidLiteral) -> error "Void literal"
+        case found of
+            Just (_, op) -> I.load op 0
+            Nothing -> do
+                maybe_decl <- U.getDecl name
+                case maybe_decl of
+                    Just decl ->
+                        case Map.lookup ty $ U.impls decl of
+                            Just impl -> return impl
+                            Nothing -> U.Codegen $ lift $ specializeFunction ty decl
+                    Nothing -> error $ "Variable " <> show name <> " not found"
+    Ann (_, Ty.TCon (Ty.TC "integer")) (P.Lit (P.IntLiteral i)) -> C.int64 $ fromIntegral i
+    Ann (_, Ty.TCon (Ty.TC "double")) (P.Lit (P.IntLiteral i)) -> C.double $ fromIntegral i
+    Ann (_, _) (P.Lit (P.DoubleLiteral d)) -> C.double d
+    Ann (_, _) (P.Lit (P.BooleanLiteral b)) -> C.bit (if b then 1 else 0)
+    Ann (_, _) (P.Lit P.VoidLiteral) -> error "Void literal"
 
 specializeFunction :: Ty.Type -> U.FnDecl -> U.CodegenTopLevel AST.Operand
 specializeFunction
@@ -292,6 +297,7 @@ specializeFunction
             I.ret ret
         fn <- U.function (AST.mkName final_name) ir_args ir_type blocks
         return fn
+specializeFunction a b = error $ "specializeFunction:\n" <> show a <> "\n" <> show b
 
 codegenAST :: P.AST (L.Range, Ty.Type) -> AST.Module
 codegenAST stmts =

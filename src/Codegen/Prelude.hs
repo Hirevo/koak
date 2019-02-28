@@ -55,6 +55,7 @@ prelude = do
     invD <- invDouble
     defI <- defaultInt
     defD <- defaultDouble
+    defB <- defaultBool
     let ty1 = [("T", ["Num"])] Ty.:=> ["T", "T"] Ty.:-> "T"
     let ty2 = [("T", ["Ord"])] Ty.:=> ["T", "T"] Ty.:-> Ty.int
     let ty3 = [("T", ["Eq"])] Ty.:=> ["T", "T"] Ty.:-> Ty.int
@@ -103,6 +104,7 @@ prelude = do
     U.pushImpl "unary_!" ([Ty.double] Ty.:-> Ty.int) invD
     U.pushImpl "default" ([] Ty.:-> Ty.int) defI
     U.pushImpl "default" ([] Ty.:-> Ty.double) defD
+    U.pushImpl "default" ([] Ty.:-> Ty.bool) defB
 
 addInt, addDouble :: M.MonadModuleBuilder m => m AST.Operand
 addInt =
@@ -373,4 +375,12 @@ defaultDouble =
     in U.inlineFunction name params ret_ty $ \[] -> mdo
         entry <- Mn.block `Mn.named` "entry"
         zero <- C.double 0
+        I.ret zero
+defaultBool =
+    let name = AST.mkName "default_bool"
+        params = []
+        ret_ty = U.bool
+    in U.inlineFunction name params ret_ty $ \[] -> mdo
+        entry <- Mn.block `Mn.named` "entry"
+        zero <- C.bit 0
         I.ret zero

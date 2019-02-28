@@ -3,7 +3,7 @@ def unary !! 10 (x:integer): integer
     if x then 0 else 1;
 
 def test(x:integer y:double z:double): double
-    y;
+    y + 5; 
 
 def binary <-> 10 (x:integer y:integer): integer
     x + y;
@@ -16,12 +16,12 @@ def binary ^ 60 (x:integer y:integer): integer
 
 extern putchar(c:integer): integer;
 
-for c = 65, c < 91, c = c + 1
-    in c = default();
+(for c = 65, c < 91, c = c + 1
+    in putchar(c)) : putchar(10) : 0;
 
 5 <-> default();
 
 -- while 1 do 5.0;
 
--- test(!0, 0.2, 0.3);
+test(!0, 0.2, 2);
 -- !!(5 <-> 3);

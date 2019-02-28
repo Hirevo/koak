@@ -3,27 +3,22 @@ extern sleep(x:integer): integer;
 extern putchar(x:integer): integer;
 extern sqrt(x:double): double;
 
--- This is here to force the type inferrer to raise type constraints
--- It forces default (<T: Default>() -> T) to be inferred as: () -> double
-def defaultDouble(): double
-    default();
+radius = sradius = default();
 
-radius = sradius = defaultDouble();
+x = sx = default();
+y = sy = default();
 
-x = sx = defaultDouble();
-y = sy = defaultDouble();
-
-for radius, 1, radius = radius + 0.5 in
-    (if (radius = (radius % 5.0)) == 0.0
+for radius = default() + 2.0, 1, radius = radius + 1.0 in
+    (if (radius = (radius % 7.0)) == 0.0
         then radius = radius + 2.0
         else radius) :
     (sradius = radius * radius) :
-    (sleep(1)) :
-    (for y = -sradius + 1.0, y < sradius, y = y + 1.0 in
+    (for y = -sradius, y < sradius, y = y + 1.0 in
         (sy = y * y) :
-        (for x = -sradius + 1.0, x < sradius, x = x + 1.0 in
+        (for x = -sradius, x < sradius, x = x + 1.0 in
             (sx = x * x) :
             (if sqrt(sx + sy) < sradius
                 then (putchar(42) : putchar(42))
                 else (putchar(32) : putchar(32)))) :
-        putchar(10));
+        putchar(10)) :
+    (sleep(1));

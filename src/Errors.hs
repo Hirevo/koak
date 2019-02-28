@@ -18,6 +18,7 @@ data Error =
     | TraitNotInScopeError Trait
     | CantSpecializeError Name Type Type
     | CantConstructInfiniteType TVar Type
+    | CantInferType
     deriving (Eq)
 instance Show Error where
     show = \case
@@ -40,6 +41,8 @@ instance Show Error where
         CantSpecializeError name gen con ->
             "CantSpecializeError: (could not specialize '" <> name <> "' of type " <> show gen
                 <> " for type " <> show con
+        CantInferType ->
+            "CantInferType (at least one type of the program could not be inferred a concrete type)"
 instance Semigroup Error where
     err <> _ = err
 instance Monoid Error where

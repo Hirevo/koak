@@ -6,13 +6,12 @@ import Misc
 import Types hiding (void)
 import Parser.Lib hiding (Parser)
 import Parser.Lang hiding (argument)
--- import Passes.Annotation
+import Passes.Deserialization
 import Passes.Inference as I
 import Control.Monad.State.Lazy
 import Control.Monad.Except
 import Control.Exception.Base
 import System.Exit
-import Debug.Trace
 import Options.Applicative
 
 import Codegen.Codegen (codegenAST)
@@ -51,10 +50,16 @@ withJIT ctx = EE.withMCJIT ctx optlevel model ptrelim fastins
 printBuiltinOps :: IO ()
 printBuiltinOps = do
     putStrLn "Built-in binary operators:"
-    builtinBinaryOps |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
+    forM_ builtinBinaryOps $ \(name, ty) ->
+        putStrLn ("(" <> name <> "): " <> show ty)
     putStrLn ""
     putStrLn "Built-in unary operators:"
-    builtinUnaryOps |> mapM (\(name, ty) -> putStrLn ("(" <> name <> "): " <> show ty))
+    forM_ builtinUnaryOps $ \(name, ty) ->
+        putStrLn ("(" <> name <> "): " <> show ty)
+    putStrLn ""
+    putStrLn "Built-in functions:"
+    forM_ builtinFunctions $ \(name, ty) ->
+        putStrLn (name <> ": " <> show ty)
     putStrLn ""
 
 data Options = Options {
@@ -94,7 +99,6 @@ main :: IO ()
 main = flip catchIOError (\err -> do
         hPutStrLn stderr $ "error: " <> ioeGetErrorString err
         exitWith (ExitFailure 84)) $ do
-
     opts <- execParser $ info
         (optsParser <**> helper)
         (fullDesc <> progDesc "Compiles a KOAK source file (potentially executes it with a JIT)"
@@ -108,6 +112,8 @@ main = flip catchIOError (\err -> do
         False -> return ()
     case parseResult of
         Parsed (parsed, _) ->
+            -- putStrLn "Deserialized:"
+            -- putStrLn $ deserializeAST parsed
             case parsed |> infer of
                 Left err -> err |> show |> fail
                 Right types -> do
@@ -119,7 +125,7 @@ main = flip catchIOError (\err -> do
                         False -> return ()
                     Ctx.withContext $ \ctx -> do
                         let mod = codegenAST types
-                        mod |> ppllvm |> unpack |> putStrLn
+                        -- mod |> ppllvm |> unpack |> putStrLn
                         case llvm_ir opts of
                             Just ir_file -> do
                                 let ir = mod |> ppllvm |> unpack

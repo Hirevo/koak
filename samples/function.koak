@@ -1,14 +1,10 @@
 
-i = 2;
+def applyInt(f:(integer) -> integer a:integer): integer
+    f(a);
 
-def not(n:double): double
-    if n then 0 else 1;
+def add2(i:integer): integer
+    i + 2;
 
-def add(a:integer b:integer): integer
-    a + b;
+(i = add2) : i(5);
 
-def add2(a:integer): integer
-    add(a, 2);
-
-not(i);
--- add2(i);
+applyInt(add2, 4);
