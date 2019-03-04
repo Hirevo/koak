@@ -10,8 +10,7 @@ test() {
     echo -n "$program" > "$TEST_FILE";
     output=$(./koak "$TEST_FILE" 2> /dev/null);
     rm "$TEST_FILE";
-    echo "$output" | grep -F "$expected" > /dev/null;
-    if [ $? -eq "0" ]; then
+    if [ "$output" = "$expected" ]; then
         echo "$name: OK !";
     else
         echo "$name: KO !";
@@ -22,40 +21,68 @@ test() {
     fi
 }
 
-test 'IfExpr' \
-     'if i == 2 then 3 + 2 else -1;' \
-     '[Ann () (ExprStmt (Ann () (If (Ann () (IfExpr {if_cond = Ann () (Bin (Ann () (BinExpr {bin_op = "==", bin_lhs = Ann () (Ident (Ann () "i")), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), if_then = Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Lit (Ann () (IntLiteral 3))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), if_else = Just (Ann () (Un (Ann () (UnExpr {un_op = "-", un_rhs = Ann () (Lit (Ann () (IntLiteral 1)))}))))})))))]';
+test 'If condition' \
+     'i = 2; if i == 2 then 3 + 2 else -1; i = 1; if i == 2 then 3 + 2 else -1;' \
+     $'2\n5\n1\n-1';
 
-test 'ForExpr' \
-     'for i = 2, i < 4, i = i + 1 in fib(i, 3 + 2);' \
-     '[Ann () (ExprStmt (Ann () (For (Ann () (ForExpr {for_init = Ann () (Bin (Ann () (BinExpr {bin_op = "=", bin_lhs = Ann () (Ident (Ann () "i")), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), for_cond = Ann () (Bin (Ann () (BinExpr {bin_op = "<", bin_lhs = Ann () (Ident (Ann () "i")), bin_rhs = Ann () (Lit (Ann () (IntLiteral 4)))}))), for_oper = Ann () (Bin (Ann () (BinExpr {bin_op = "=", bin_lhs = Ann () (Ident (Ann () "i")), bin_rhs = Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Ident (Ann () "i")), bin_rhs = Ann () (Lit (Ann () (IntLiteral 1)))})))}))), for_body = Ann () (Call (Ann () (CallExpr {call_ident = "fib", call_args = [Ann () (Ident (Ann () "i")),Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Lit (Ann () (IntLiteral 3))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))})))]})))})))))]';
+test 'For loop' \
+     'ret = 0; for i = 2, i < 4, i = i + 1 in ret = ret + i;' \
+     $'0\n5';
+
+test 'While loop' \
+     'i = 0; while i < 10 do i = i + 1;' \
+     $'0\n10';
+
+test 'Function definition' \
+     'def add2(x:integer): integer x + 2; add2(40);' \
+     $'42';
+
+test 'Binary operator definition' \
+     'def binary && (a:integer b:integer): integer if a then b else a; 42 && 53; 0 && 4;' \
+     $'53\n0';
+
+test 'Unary operator definition' \
+     'def unary % (a:integer): integer if a then 0 else 1; %53; %0;' \
+     $'0\n1';
 
 test 'Precedence 1' \
      '3 + 2 * 3;' \
-     '[Ann () (ExprStmt (Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Lit (Ann () (IntLiteral 3))), bin_rhs = Ann () (Bin (Ann () (BinExpr {bin_op = "*", bin_lhs = Ann () (Lit (Ann () (IntLiteral 2))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 3)))})))})))))]';
+     $'9';
 
 test 'Precedence 2' \
      '3 * 2 + 3;' \
-     '[Ann () (ExprStmt (Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Bin (Ann () (BinExpr {bin_op = "*", bin_lhs = Ann () (Lit (Ann () (IntLiteral 3))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 3)))})))))]';
+     $'9';
 
 test 'Precedence 3' \
      '3 * -2 + 3;' \
-     '[Ann () (ExprStmt (Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Bin (Ann () (BinExpr {bin_op = "*", bin_lhs = Ann () (Lit (Ann () (IntLiteral 3))), bin_rhs = Ann () (Un (Ann () (UnExpr {un_op = "-", un_rhs = Ann () (Lit (Ann () (IntLiteral 2)))})))}))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 3)))})))))]';
+     $'-3';
 
 test 'Precedence 4' \
      '1 + 2 * 3;' \
-     '[Ann () (ExprStmt (Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Lit (Ann () (IntLiteral 1))), bin_rhs = Ann () (Bin (Ann () (BinExpr {bin_op = "*", bin_lhs = Ann () (Lit (Ann () (IntLiteral 2))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 3)))})))})))))]';
+     $'7';
 
 test 'Precedence 5' \
      '1 * 2 + 3;' \
-     '[Ann () (ExprStmt (Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Bin (Ann () (BinExpr {bin_op = "*", bin_lhs = Ann () (Lit (Ann () (IntLiteral 1))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 3)))})))))]';
+     $'5';
 
 test 'Precedence 6' \
      '(1 + 2) * 3;' \
-     '[Ann () (ExprStmt (Ann () (Bin (Ann () (BinExpr {bin_op = "*", bin_lhs = Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Lit (Ann () (IntLiteral 1))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 2)))}))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 3)))})))))]';
+     $'9';
 
 test 'Precedence 7' \
      '1 * (2 + 3);' \
-     '[Ann () (ExprStmt (Ann () (Bin (Ann () (BinExpr {bin_op = "*", bin_lhs = Ann () (Lit (Ann () (IntLiteral 1))), bin_rhs = Ann () (Bin (Ann () (BinExpr {bin_op = "+", bin_lhs = Ann () (Lit (Ann () (IntLiteral 2))), bin_rhs = Ann () (Lit (Ann () (IntLiteral 3)))})))})))))]';
+     $'5';
+
+test 'Associativity' \
+     'a = b = 1;' \
+     $'1';
+
+test 'Lambdas (Simple)' \
+     'f = (x -> x * 2); f(8);' \
+     $'16';
+
+test 'Lambdas (Advanced inference)' \
+     'f = (x -> x * 2.0); f(8);' \
+     $'16.000000';
 
 echo;

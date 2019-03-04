@@ -5,7 +5,6 @@
 module Codegen.Utils where
 
 import Misc
-import Annotation
 import Control.Monad.Except
 import Control.Monad.State.Lazy
 import Control.Applicative
@@ -35,7 +34,9 @@ data FnDecl = FnDecl {
 data Env = Env {
     vars :: [Map.Map Ty.Name (Ty.Type, AST.Operand)],
     decls :: Map.Map Ty.Name FnDecl,
-    exprs :: [(Ty.Type, AST.Operand)]
+    exprs :: [(Ty.Type, AST.Operand)],
+    anon_count :: Int,
+    lambda_count :: Int
 } deriving (Show, Eq)
 newtype CodegenTopLevel a = CodegenTopLevel {
     runCodegenTopLevel :: M.ModuleBuilderT (State Env) a
@@ -43,6 +44,18 @@ newtype CodegenTopLevel a = CodegenTopLevel {
 newtype Codegen a = Codegen {
     runCodegen :: Mn.IRBuilderT CodegenTopLevel a
 }  deriving (Functor, Applicative, Monad, MonadFix, MonadState Env, Mn.MonadIRBuilder)
+
+freshAnonName :: MonadState Env m => m String
+freshAnonName = do
+    count <- gets anon_count
+    modify $ \env -> env { anon_count = count + 1 }
+    return ("_anon_" <> show count)
+
+freshLambdaName :: MonadState Env m => m String
+freshLambdaName = do
+    count <- gets lambda_count
+    modify $ \env -> env { lambda_count = count + 1 }
+    return ("_lambda_" <> show count)
 
 newScope, dropScope :: MonadState Env m => m ()
 newScope = modify $ \env -> env { vars = Map.empty : vars env }
@@ -89,6 +102,8 @@ defaultValue :: Ty.Type -> Cst.Constant
 defaultValue (Ty.TCon (Ty.TC "integer")) = Cst.Int 64 0
 defaultValue (Ty.TCon (Ty.TC "double")) = Cst.Float (Flt.Double 0)
 defaultValue (Ty.TCon (Ty.TC "bool")) = Cst.Int 1 0
+defaultValue ty@(_ Ty.:-> _) = Cst.Null (irType ty)
+defaultValue ty = error ("no default value defined for " <> show ty)
 
 irType :: Ty.Type -> T.Type
 irType (Ty.TCon (Ty.TC "integer")) = int
@@ -98,7 +113,7 @@ irType (Ty.TCon (Ty.TC "void")) = Codegen.Utils.void
 irType (args Ty.:-> ret_ty) = T.ptr $ T.FunctionType (irType ret_ty) (args |> map irType) False
 irType ty = error $ show ty
 
--- | An constant static string pointer
+-- | A constant static string pointer
 stringPtr :: M.MonadModuleBuilder m => String -> AST.Name -> m AST.Operand
 stringPtr str nm = do
     let asciiVals = map (fromIntegral . ord) str
@@ -117,6 +132,26 @@ stringPtr str nm = do
     }
     pure $ AST.ConstantOperand $ Cst.BitCast (Cst.GlobalReference (T.ptr ty) nm) charStar
 
+-- | A constant static string pointer with internal linkage
+preludeStringPtr :: M.MonadModuleBuilder m => String -> AST.Name -> m AST.Operand
+preludeStringPtr str nm = do
+    let asciiVals = map (fromIntegral . ord) str
+        llvmVals  = map (Cst.Int 8) (asciiVals <> [0])
+        char      = T.IntegerType 8
+        charStar  = T.ptr char
+        charArray = Cst.Array char llvmVals
+        ty        = Tpd.typeOf charArray
+    M.emitDefn $ AST.GlobalDefinition Glb.globalVariableDefaults {
+          Glb.name        = nm
+        , Glb.type'       = ty
+        , Glb.linkage     = Lnk.Internal
+        , Glb.isConstant  = True
+        , Glb.initializer = Just charArray
+        , Glb.unnamedAddr = Just AST.GlobalAddr
+    }
+    pure $ AST.ConstantOperand $ Cst.BitCast (Cst.GlobalReference (T.ptr ty) nm) charStar
+
+-- | A function definition with external linkage
 function :: M.MonadModuleBuilder m
     => AST.Name -> [(AST.Name, T.Type)] -> T.Type -> [AST.BasicBlock] -> m AST.Operand
 function name argtys retty body = do
@@ -129,13 +164,14 @@ function name argtys retty body = do
     let funty = T.ptr $ AST.FunctionType retty (map snd argtys) False
     pure $ AST.ConstantOperand $ Cst.GlobalReference funty name
 
-inlineFunction :: M.MonadModuleBuilder m
+-- | A function definition with internal linkage and alwaysinline attribute
+preludeFunction :: M.MonadModuleBuilder m
   => AST.Name
   -> [(T.Type, M.ParameterName)]
   -> AST.Type
   -> ([AST.Operand] -> Mn.IRBuilderT m ())
   -> m AST.Operand
-inlineFunction name argtys retty body = do
+preludeFunction name argtys retty body = do
     let tys = fst <$> argtys
     (paramNames, blocks) <- Mn.runIRBuilderT Mn.emptyIRBuilder $ do
         paramNames <- forM argtys $ \(_, paramName) -> case paramName of
@@ -145,6 +181,7 @@ inlineFunction name argtys retty body = do
         return paramNames
     let def = AST.GlobalDefinition Glb.functionDefaults {
         Glb.name = name,
+        Glb.linkage = Lnk.Internal,
         Glb.functionAttributes = [Right FnAttr.AlwaysInline],
         Glb.parameters = (zipWith (\ty nm -> AST.Parameter ty nm []) tys paramNames, False),
         Glb.returnType = retty,
@@ -180,6 +217,7 @@ externVarArgs nm argtys retty = do
     let funty = T.ptr $ AST.FunctionType retty (map snd argtys) True
     pure $ AST.ConstantOperand $ Cst.GlobalReference funty nm
 
+-- | A global variable with external linkage
 global :: M.MonadModuleBuilder m
     => AST.Name -> T.Type -> Cst.Constant -> m AST.Operand
 global nm ty initVal = do
@@ -187,6 +225,18 @@ global nm ty initVal = do
         Glb.name                  = nm,
         Glb.type'                 = ty,
         Glb.linkage               = Lnk.External,
+        Glb.initializer           = Just initVal
+    }
+    pure $ AST.ConstantOperand $ Cst.GlobalReference (T.ptr ty) nm
+
+-- | A global variable with internal linkage
+preludeGlobal :: M.MonadModuleBuilder m
+    => AST.Name -> T.Type -> Cst.Constant -> m AST.Operand
+preludeGlobal nm ty initVal = do
+    M.emitDefn $ AST.GlobalDefinition Glb.globalVariableDefaults {
+        Glb.name                  = nm,
+        Glb.type'                 = ty,
+        Glb.linkage               = Lnk.Internal,
         Glb.initializer           = Just initVal
     }
     pure $ AST.ConstantOperand $ Cst.GlobalReference (T.ptr ty) nm

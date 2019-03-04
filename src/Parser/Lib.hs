@@ -3,7 +3,6 @@
 {-# LANGUAGE LambdaCase #-}
 module Parser.Lib where
 
-import Misc
 import Control.Applicative
 import Control.Monad
 
@@ -38,7 +37,7 @@ instance Applicative ParseResult where
 instance Alternative ParseResult where
     empty = NotParsed Pos{ file = Nothing, line = 0, column = 0 } $ NotMatched "Unknown error"
     Parsed a       <|> _              = Parsed a
-    NotParsed p1 _ <|> Parsed b       = Parsed b
+    NotParsed _  _ <|> Parsed b       = Parsed b
     NotParsed p1 a <|> NotParsed p2 b =
         if p1 > p2
             then NotParsed p1 a
@@ -213,6 +212,6 @@ pString = mapM pChar
 pNot :: Parser a -> Parser ()
 pNot p = Parser $ \str ->
     case parseFrom (peek p) str of
-        Parsed (_, (rest, pos)) -> NotParsed pos (NotMatched "Invalid input")
+        Parsed (_, (_, pos)) -> NotParsed pos (NotMatched "Invalid input")
         NotParsed _ (NotMatched _) -> Parsed ((), str)
         NotParsed pos EndOfInput -> NotParsed pos EndOfInput

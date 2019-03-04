@@ -5,19 +5,10 @@
 module Passes.Deserialization where
 
 import Annotation
-import Errors
 import Misc
-import Control.Applicative
-import Data.Functor.Identity
-import Control.Monad.Except
-import Control.Monad.State.Lazy
 
 import Data.List (intercalate)
 
-import Types as T
-
-import qualified Data.Map as Map
-import qualified Parser.Lib as L
 import qualified Parser.Lang as P
 
 deserializeArg :: Ann a P.Arg -> String

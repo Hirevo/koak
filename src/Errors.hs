@@ -17,8 +17,8 @@ data Error =
     | NotImplTraitError Type Trait
     | TraitNotInScopeError Trait
     | CantSpecializeError Name Type Type
-    | CantConstructInfiniteType TVar Type
-    | CantInferType
+    | CantConstructInfiniteTypeError TVar Type
+    | CantInferTypeError
     deriving (Eq)
 instance Show Error where
     show = \case
@@ -41,7 +41,10 @@ instance Show Error where
         CantSpecializeError name gen con ->
             "CantSpecializeError: (could not specialize '" <> name <> "' of type " <> show gen
                 <> " for type " <> show con
-        CantInferType ->
+        CantConstructInfiniteTypeError var ty ->
+            "CantConstructInfiniteTypeError: (could not resolve constraint "
+                <> show var <> " ~ " <> show ty <> ")"
+        CantInferTypeError ->
             "CantInferType (at least one type of the program could not be inferred a concrete type)"
 instance Semigroup Error where
     err <> _ = err
@@ -51,7 +54,8 @@ instance Monoid Error where
 
 -- Usable to find close matches for NotInScope errors.
 levenshtein :: String -> String -> Int
-levenshtein a b | min (length a) (length b) == 0 = max (length a) (length b)
+levenshtein [] b = length b
+levenshtein a [] = length a
 levenshtein (a:as) (b:bs) = minimum [ levenshtein as (b:bs) + 1,
                                       levenshtein (a:as) bs + 1,
                                       levenshtein as bs + if a == b then 0 else 1 ]

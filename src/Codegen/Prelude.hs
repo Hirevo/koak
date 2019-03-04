@@ -4,9 +4,6 @@
 module Codegen.Prelude where
 
 import Annotation
-import Control.Monad.State.Lazy
-
-import Data.Char (ord)
 
 import qualified Types as Ty
 import qualified Codegen.Utils as U
@@ -15,17 +12,12 @@ import qualified Parser.Lang as P
 import qualified LLVM.AST as AST
 import qualified LLVM.AST.IntegerPredicate as IPred
 import qualified LLVM.AST.FloatingPointPredicate as FPred
-import qualified LLVM.AST.Constant as Cst
-import qualified LLVM.AST.Global as Glb
-import qualified LLVM.AST.Linkage as Lnk
 import qualified LLVM.AST.Instruction as Ist
-import qualified LLVM.AST.Type as T
 import qualified LLVM.AST.Typed as Tpd
 import qualified LLVM.IRBuilder.Constant as C
 import qualified LLVM.IRBuilder.Instruction as I
 import qualified LLVM.IRBuilder.Module as M
 import qualified LLVM.IRBuilder.Monad as Mn
-import qualified Data.Map as Map
 
 prelude :: U.CodegenTopLevel ()
 prelude = do
@@ -111,16 +103,16 @@ addInt =
     let name = AST.mkName "add_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- I.add a b
         I.ret result
 addDouble =
     let name = AST.mkName "add_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.double
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- I.fadd a b
         I.ret result
 
@@ -129,16 +121,16 @@ subInt =
     let name = AST.mkName "sub_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- I.sub a b
         I.ret result
 subDouble =
     let name = AST.mkName "sub_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.double
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- I.fsub a b
         I.ret result
 
@@ -147,16 +139,16 @@ multInt =
     let name = AST.mkName "mult_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- I.mul a b
         I.ret result
 multDouble =
     let name = AST.mkName "mult_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.double
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- I.fmul a b
         I.ret result
 
@@ -165,16 +157,16 @@ divInt =
     let name = AST.mkName "div_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- I.sdiv a b
         I.ret result
 divDouble =
     let name = AST.mkName "div_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.double
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- I.fdiv a b
         I.ret result
 
@@ -183,16 +175,16 @@ modInt =
     let name = AST.mkName "mod_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- Mn.emitInstr (Tpd.typeOf a) $ Ist.SRem a b []
         I.ret result
 modDouble =
     let name = AST.mkName "mod_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.double
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         result <- I.frem a b
         I.ret result
 
@@ -201,8 +193,8 @@ ltInt =
     let name = AST.mkName "lt_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.icmp IPred.SLT a b
         true <- C.int64 1
         false <- C.int64 0
@@ -212,8 +204,8 @@ ltDouble =
     let name = AST.mkName "lt_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.fcmp FPred.OLT a b
         true <- C.int64 1
         false <- C.int64 0
@@ -225,8 +217,8 @@ gtInt =
     let name = AST.mkName "gt_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.icmp IPred.SGT a b
         true <- C.int64 1
         false <- C.int64 0
@@ -236,21 +228,21 @@ gtDouble =
     let name = AST.mkName "gt_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.fcmp FPred.OGT a b
         true <- C.int64 1
         false <- C.int64 0
         result <- I.select cond true false
         I.ret result
 
-eqInt, eqDouble :: M.MonadModuleBuilder m => m AST.Operand
+eqInt, eqDouble, eqBool :: M.MonadModuleBuilder m => m AST.Operand
 eqInt =
     let name = AST.mkName "eq_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.icmp IPred.EQ a b
         true <- C.int64 1
         false <- C.int64 0
@@ -260,8 +252,8 @@ eqDouble =
     let name = AST.mkName "eq_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.fcmp FPred.OEQ a b
         true <- C.int64 1
         false <- C.int64 0
@@ -271,21 +263,21 @@ eqBool =
     let name = AST.mkName "eq_bool"
         params = [(U.bool, M.ParameterName "a"), (U.bool, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.icmp IPred.EQ a b
         true <- C.int64 1
         false <- C.int64 0
         result <- I.select cond true false
         I.ret result
 
-neqInt, neqDouble :: M.MonadModuleBuilder m => m AST.Operand
+neqInt, neqDouble, neqBool :: M.MonadModuleBuilder m => m AST.Operand
 neqInt =
     let name = AST.mkName "neq_int"
         params = [(U.int, M.ParameterName "a"), (U.int, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.icmp IPred.NE a b
         true <- C.int64 1
         false <- C.int64 0
@@ -295,8 +287,8 @@ neqDouble =
     let name = AST.mkName "neq_double"
         params = [(U.double, M.ParameterName "a"), (U.double, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.fcmp FPred.ONE a b
         true <- C.int64 1
         false <- C.int64 0
@@ -306,8 +298,8 @@ neqBool =
     let name = AST.mkName "neq_bool"
         params = [(U.bool, M.ParameterName "a"), (U.bool, M.ParameterName "b")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a, b] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a, b] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         cond <- I.icmp IPred.NE a b
         true <- C.int64 1
         false <- C.int64 0
@@ -319,8 +311,8 @@ negInt =
     let name = AST.mkName "neg_int"
         params = [(U.int, M.ParameterName "a")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         neg <- C.int64 (-1)
         result <- I.mul a neg
         I.ret result
@@ -328,8 +320,8 @@ negDouble =
     let name = AST.mkName "neg_double"
         params = [(U.double, M.ParameterName "a")]
         ret_ty = U.double
-    in U.inlineFunction name params ret_ty $ \[a] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         neg <- C.double (-1)
         result <- I.fmul a neg
         I.ret result
@@ -339,8 +331,8 @@ invInt =
     let name = AST.mkName "inv_int"
         params = [(U.int, M.ParameterName "a")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         one <- C.int64 1
         zero <- C.int64 0
         cond <- I.icmp IPred.EQ a zero
@@ -350,8 +342,8 @@ invDouble =
     let name = AST.mkName "inv_double"
         params = [(U.double, M.ParameterName "a")]
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[a] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[a] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         one <- C.int64 1
         zero <- C.int64 0
         fzero <- C.double 0
@@ -359,28 +351,28 @@ invDouble =
         result <- I.select cond one zero
         I.ret result
 
-defaultInt, defaultDouble :: M.MonadModuleBuilder m => m AST.Operand
+defaultInt, defaultDouble, defaultBool :: M.MonadModuleBuilder m => m AST.Operand
 defaultInt =
     let name = AST.mkName "default_int"
         params = []
         ret_ty = U.int
-    in U.inlineFunction name params ret_ty $ \[] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         zero <- C.int64 0
         I.ret zero
 defaultDouble =
     let name = AST.mkName "default_double"
         params = []
         ret_ty = U.double
-    in U.inlineFunction name params ret_ty $ \[] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         zero <- C.double 0
         I.ret zero
 defaultBool =
     let name = AST.mkName "default_bool"
         params = []
         ret_ty = U.bool
-    in U.inlineFunction name params ret_ty $ \[] -> mdo
-        entry <- Mn.block `Mn.named` "entry"
+    in U.preludeFunction name params ret_ty $ \[] -> mdo
+        _ <- Mn.block `Mn.named` "entry"
         zero <- C.bit 0
         I.ret zero

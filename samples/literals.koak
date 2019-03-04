@@ -1,4 +1,5 @@
 
 def value(): double
     3;
+
 value();

@@ -4,9 +4,8 @@ module Types where
 
 import Misc
 import Data.String
-import Data.Monoid
 
-import Data.List (intercalate, find)
+import Data.List (intercalate)
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -87,10 +86,10 @@ instance Show Scheme where
              if null traits
                  then return $ show var
                  else return $ show var <> ": " <> (traits |> map show |> intercalate " + ")
-        in if null vars then "" else "<" <> (vars |> intercalate ", ") <> ">" <> show ty
+        in (if null vars then "" else "<" <> (vars |> intercalate ", ") <> ">") <> show ty
 instance Substitutable Scheme where
     applySubst (Subst subst) (cs :=> ty) =
-        let cs' = cs |> map (\(tv, cs) -> (TVar tv, cs)) |> Map.fromList
+        let cs' = cs |> map (\(tv, cs'') -> (TVar tv, cs'')) |> Map.fromList
             subst' = Subst (subst `Map.difference` cs')
         in cs :=> applySubst subst' ty
     freeTypeVars (cs :=> ty) =
@@ -106,6 +105,7 @@ instance Substitutable Constraint where
         Implements t1 traits -> Implements (applySubst s t1) traits
     freeTypeVars = \case
         Matches t1 t2 -> freeTypeVars t1 <> freeTypeVars t2
+        Implements t1 _ -> freeTypeVars t1
 isImplConstraint :: Constraint -> Bool
 isImplConstraint (Implements _ _) = True
 isImplConstraint _ = False

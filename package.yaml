@@ -10,7 +10,10 @@ copyright:           2019 Author name here
 category:            Web
 extra-source-files:
 - README.md
-
+# ghc-options:
+#   - -Wall
+#   - -Wno-name-shadowing
+ 
 dependencies:
   - base >= 4.7 && < 5
   - llvm-hs >= 6

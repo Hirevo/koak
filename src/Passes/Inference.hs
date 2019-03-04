@@ -22,7 +22,6 @@ import Types as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Parser.Lang as P
-import qualified Parser.Lib as L
 
 newtype TypeEnv = TypeEnv (Map.Map Name Scheme) deriving (Show, Eq)
 instance Substitutable TypeEnv where
@@ -107,7 +106,7 @@ fresh = do
     return $ TVar $ TV (letters !! idx)
 
 inferArg :: P.LocatedArg -> Infer P.TypedArg
-inferArg arg@(Ann range (P.Arg name ty)) = do
+inferArg (Ann range (P.Arg name ty)) = do
     pushVar name ([] :=> ty)
     return $ Ann (range, ty)
            $ P.Arg name ty
@@ -242,6 +241,19 @@ inferExpr = \case
                 ty <- instantiate scheme
                 return $ Ann (range, ty)
                        $ P.Ident ident
+    Ann range (P.Lambda args body) ->
+        withScope $ do
+            tv <- fresh
+            inferred_args <- forM args $ \(Ann range name) -> do
+                tv <- fresh
+                pushVar name ([] :=> tv)
+                return $ Ann (range, tv) name
+            inferred_body <- inferExpr body
+            let args_tys = map (snd . annotation) inferred_args
+            let ret_ty = snd (annotation inferred_body)
+            pushConstraint $ Matches tv (args_tys :-> ret_ty)
+            return $ Ann (range, tv)
+                   $ P.Lambda inferred_args inferred_body
     Ann range (P.Lit lit@(P.IntLiteral _)) -> do
         tv <- fresh
         pushConstraint $ Implements tv ["Num"]
@@ -297,7 +309,7 @@ apply t1 t2 = error $ "Non-function call application: " <> show t1 <> " onto " <
 (<<>>) :: TVar -> Type -> Solve Subst
 name <<>> (TVar v) | boundToSelf = return mempty
     where boundToSelf = name == v
-name <<>> ty | name >|< ty = throwError (CantConstructInfiniteType name ty)
+name <<>> ty | name >|< ty = throwError (CantConstructInfiniteTypeError name ty)
     where n >|< t = Set.member n (freeTypeVars t)
 name <<>> ty = return (Subst $ Map.singleton (TVar name) ty)
 
@@ -326,11 +338,8 @@ infer stmts = do
                                  |> runInfer
                                  |> runExceptT
                                  |> flip runState defaultEnv
-    let (impls, matches) = env |> tvars |> reverse |> partition isImplConstraint
-    let merged = foldl (\acc (Implements var traits) -> Map.insertWith (<>) var traits acc) Map.empty impls
-    let final_impls = merged |> Map.toList |> map (\(var, traits) -> Implements var traits)
     ast <- maybe_ast
-    solutions <- runSolve (matches <> reverse final_impls)
+    solutions <- runSolve (env |> tvars |> reverse |> fuseConstraints)
     return (ast |> mapM substStmt |> flip runReader solutions)
 
 inferAST :: P.LocatedAST -> (Either Error P.TypedAST, Env)
@@ -344,7 +353,8 @@ unifies :: Type -> Type -> Solve Subst
 unifies t1 t2 | t1 == t2 = return mempty
 unifies (TVar v) t = v <<>> t
 unifies t (TVar v) = v <<>> t
-unifies (t1s :-> t2) (t3s :-> t4) = unifyMany (zip t1s t3s <> [(t2, t4)])
+unifies (t1s :-> t2) (t3s :-> t4) | length t1s == length t3s = unifyMany (zip t1s t3s <> [(t2, t4)])
+unifies (t1s :-> _) (t3s :-> _) = throwError $ ArgCountError (length t3s) (length t1s)
 unifies t1 t2 = throwError $ TypeError t1 t2
 
 unifyMany :: [(Type, Type)] -> Solve Subst
@@ -361,6 +371,13 @@ remains t1 = \case
     (_:cs) -> remains t1 cs
     [] -> False
 
+fuseConstraints :: [Constraint] -> [Constraint]
+fuseConstraints cs =
+    let (impls, matches) = cs |> partition isImplConstraint
+        merged = foldl (\acc (Implements var traits) -> Map.insertWith (<>) var traits acc) Map.empty impls
+        final_impls = merged |> Map.toList |> map (\(var, traits) -> Implements var traits)
+    in matches <> final_impls
+
 solveConstraints :: Solve Subst
 solveConstraints = do
     (su, constraints) <- get
@@ -368,9 +385,9 @@ solveConstraints = do
         [] -> return su
         (Matches var ty : cs) -> do
             su1 <- unifies var ty
-            put (su1 <> su, applySubst su1 cs)
+            put (su1 <> su, cs |> applySubst su1 |> fuseConstraints)
             solveConstraints
-        (Implements var [] : cs) -> do
+        (Implements _ [] : cs) -> do
             put (su, cs)
             solveConstraints
         (Implements var traits : cs) ->
@@ -388,11 +405,10 @@ solveConstraints = do
                              def <- defaultTraitType trait
                              let TCon tc = def
                              implementsTraits traits tc
-                             return def
-                        ty <- traits |> map action |> foldl (<|>) (throwError CantInferType) -- TODO: Add location infos
-                        let su1 = Subst (Map.singleton var ty)
-                        put (su1 <> su, applySubst su1 cs)
-                        solveConstraints
+                             let su1 = Subst (Map.singleton var def)
+                             put (su1 <> su, cs |> applySubst su1 |> fuseConstraints)
+                             solveConstraints
+                        traits |> map action |> foldl (<|>) (throwError CantInferTypeError)
                     Nothing | remains var cs -> do
                         put (su, cs <> [Implements var traits])
                         solveConstraints
@@ -402,13 +418,9 @@ solveConstraints = do
                              let TCon tc = def
                              implementsTraits traits tc
                              let su1 = Subst (Map.singleton var def)
-                             put (su1 <>  su, applySubst su1 cs)
+                             put (su1 <> su, cs |> applySubst su1 |> fuseConstraints)
                              solveConstraints
-                             return def
-                        ty <- traits |> map action |> foldl (<|>) (throwError CantInferType)
-                        let su1 = Subst (Map.singleton var ty)
-                        put (su1 <> su, applySubst su1 cs)
-                        solveConstraints
+                        traits |> map action |> foldl (<|>) (throwError CantInferTypeError)
                 TCon tc -> do
                     implementsTraits traits tc
                     put (su, cs)
@@ -487,6 +499,12 @@ substExpr = \case
         s <- ask
         return $ Ann (range, applySubst s ty)
                $ P.Ident ident
+    Ann (range, ty) (P.Lambda args body) -> do
+        s <- ask
+        let substituted_args = map (\(Ann (range2, ty2) name) -> Ann (range2, applySubst s ty2) name) args
+        substituted_body <- substExpr body
+        return $ Ann (range, applySubst s ty)
+               $ P.Lambda substituted_args substituted_body
     Ann (range, ty) (P.Lit lit@(P.IntLiteral _)) -> do
         s <- ask
         return $ Ann (range, applySubst s ty)

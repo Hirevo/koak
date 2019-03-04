@@ -4,21 +4,14 @@
 {-# LANGUAGE LambdaCase #-}
 module Codegen.Specialization where
     
-import Misc
 import Annotation
 import Control.Monad.State.Lazy
 
-import Data.List (partition)
 import Data.Maybe (fromJust)
-import Data.ByteString.Char8 (pack)
-import Data.ByteString.Short (toShort)
 
-import qualified Parser.Lib as L
-import qualified Parser.Lang as P
 import qualified Types as Ty
-import qualified Codegen.Prelude as Pre
-import qualified Codegen.Utils as U
 import qualified Data.Map as Map
+import qualified Parser.Lang as P
 
 type Specialize = State (Map.Map Ty.TVar Ty.Type)
 

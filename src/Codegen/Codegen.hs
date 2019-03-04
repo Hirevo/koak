@@ -9,14 +9,12 @@
 module Codegen.Codegen where
     
 import Misc
-import Errors
 import Annotation
 import Control.Monad.Except
 import Control.Monad.State.Lazy
 import Data.ByteString.Char8 (pack)
 import Data.ByteString.Short (toShort)
 
-import Data.List (partition)
 import Data.Maybe (fromJust)
 
 import qualified Parser.Lib as L
@@ -28,20 +26,12 @@ import qualified Codegen.Specialization as Spe
 import qualified LLVM.AST as AST
 import qualified LLVM.AST.IntegerPredicate as IPred
 import qualified LLVM.AST.Type as T
-import qualified LLVM.AST.Constant as Cst
 import qualified LLVM.AST.Operand as Op
 import qualified LLVM.IRBuilder.Constant as C
 import qualified LLVM.IRBuilder.Instruction as I
 import qualified LLVM.IRBuilder.Module as M
 import qualified LLVM.IRBuilder.Monad as Mn
 import qualified Data.Map as Map
-
-codegenLiteral :: P.Typed P.Literal -> U.Codegen AST.Operand
-codegenLiteral = \case
-    Ann (_, Ty.TCon (Ty.TC "integer")) a@(P.IntLiteral i) -> C.int64 $ fromIntegral i
-    Ann (_, Ty.TCon (Ty.TC "double")) a@(P.IntLiteral i) -> C.double $ fromIntegral i
-    Ann (_, _) a@(P.DoubleLiteral d) -> C.double d
-    Ann (_, _) a@P.VoidLiteral -> error "codegen VoidLiteral not implemented"
 
 codegenStmt :: P.TypedStmt -> U.CodegenTopLevel AST.Operand
 codegenStmt = \case
@@ -55,7 +45,7 @@ codegenStmt = \case
             let ir_type = ret_ty |> U.irType
             U.pushDeclAndImpl final_name ([] Ty.:=> fn_ty) (fn_ty, fn)
             blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ do
-                entry <- Mn.block `Mn.named` "entry"
+                _ <- Mn.block `Mn.named` "entry"
                 op_args <- forM args $ \(Ann (_, ty) (P.Arg name _)) -> do
                     arg <- I.alloca (U.irType ty) Nothing 0
                     name <- Mn.fresh `Mn.named` toShort (pack name)
@@ -65,7 +55,7 @@ codegenStmt = \case
                 let names = map (\(Ann _ (P.Arg name _)) -> name) args
                 let types = map (snd . annotation) args
                 op_args |> zip3 names types
-                        |> mapM (\(name, ty, arg) -> U.pushVar name ty arg)
+                        |> mapM_ (\(name, ty, arg) -> U.pushVar name ty arg)
                 ret <- codegenExpr body
                 I.ret ret
             fn <- U.function (AST.mkName final_name) ir_args ir_type blocks
@@ -78,32 +68,32 @@ codegenStmt = \case
                 var <- U.global (AST.mkName name) ir_type (U.defaultValue ty)
                 U.pushVar name ty var
                 blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ U.withScope $ do
-                    entry <- Mn.block `Mn.named` "entry"
+                    _ <- Mn.block `Mn.named` "entry"
                     val <- codegenExpr start
                     I.store var 0 val
                     I.ret val
-                count <- gets $ \env -> env |> U.exprs |> length
-                fn <- U.function (AST.mkName ("__anon_" <> show count)) [] ir_type blocks
+                name <- U.freshAnonName
+                fn <- U.function (AST.mkName name) [] ir_type blocks
                 U.pushExpr (ty, fn)
                 return fn
             Just (_, var) -> do
                 blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ U.withScope $ do
-                    entry <- Mn.block `Mn.named` "entry"
+                    _ <- Mn.block `Mn.named` "entry"
                     val <- codegenExpr start
                     I.store var 0 val
                     I.ret val
-                count <- gets $ \env -> env |> U.exprs |> length
-                fn <- U.function (AST.mkName ("__anon_" <> show count)) [] ir_type blocks
+                name <- U.freshAnonName
+                fn <- U.function (AST.mkName name) [] ir_type blocks
                 U.pushExpr (ty, fn)
                 return fn
     Ann (_, ty) (P.Expr expr) -> do
         let ir_type = U.irType ty
         blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ U.withScope $ do
-            entry <- Mn.block `Mn.named` "entry"
+            _ <- Mn.block `Mn.named` "entry"
             ret <- codegenExpr expr
             I.ret ret
-        count <- gets $ \env -> env |> U.exprs |> length
-        fn <- U.function (AST.mkName ("__anon_" <> show count)) [] ir_type blocks
+        name <- U.freshAnonName
+        fn <- U.function (AST.mkName name) [] ir_type blocks
         U.pushExpr (ty, fn)
         return fn
     Ann (_, fn_ty) (P.Extern name args ret_ty) -> do
@@ -117,7 +107,7 @@ codegenExpr ::P.TypedExpr -> U.Codegen AST.Operand
 codegenExpr = \case
     Ann (_, ty) (P.For start cond oper body) ->
         U.withScope $ mdo
-            start_ret <- codegenExpr start
+            _ <- codegenExpr start
             I.br for_cond_in
             entry <- Mn.currentBlock
             for_cond_in <- Mn.block `Mn.named` "for.cond"
@@ -131,12 +121,12 @@ codegenExpr = \case
             I.condBr bool for_body_in for_end
             for_body_in <- Mn.block `Mn.named` "for.body"
             body_ret <- codegenExpr body
-            oper_ret <- codegenExpr oper
+            _ <- codegenExpr oper
             for_body_out <- Mn.currentBlock
             I.br for_cond_in
             for_end <- Mn.block `Mn.named` "for.end"
             I.phi [(val, for_cond_out)]
-    Ann (_, ty) (P.If cond then_body else_block) ->
+    Ann (_, _) (P.If cond then_body else_block) ->
         U.withScope $ mdo
             cond_ret <- codegenExpr cond
             inv_impl <- fmap fromJust $ U.getImpl "unary_!" ([snd (annotation cond)] Ty.:-> Ty.int)
@@ -185,7 +175,6 @@ codegenExpr = \case
             I.phi [(val, while_cond_out)]
     Ann (_, ty) (P.Call (Ann _ name) args) -> mdo
         let prototype = map (snd . annotation) args Ty.:-> ty
-        env <- get
         maybe_decl <- U.getDecl name
         case maybe_decl of
             Just decl ->
@@ -261,16 +250,37 @@ codegenExpr = \case
                             Just impl -> return impl
                             Nothing -> U.Codegen $ lift $ specializeFunction ty decl
                     Nothing -> error $ "Variable " <> show name <> " not found"
+    Ann (_, ty) (P.Lambda args body) ->
+        U.withScope $ U.Codegen $ lift $ do
+            let ir_args = map (\(Ann (_, ty) name) -> (AST.mkName name, U.irType ty)) args
+            let ir_type = U.irType ((\(_ Ty.:-> ret) -> ret) ty)
+            blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ do
+                _ <- Mn.block `Mn.named` "entry"
+                op_args <- forM args $ \(Ann (_, ty) name) -> do
+                    arg <- I.alloca (U.irType ty) Nothing 0
+                    name <- Mn.fresh `Mn.named` toShort (pack name)
+                    let ref = Op.LocalReference (U.irType ty) name
+                    I.store arg 0 ref
+                    return arg
+                let names = map (\(Ann _ name) -> name) args
+                let types = map (snd . annotation) args
+                op_args |> zip3 names types
+                        |> mapM_ (\(name, ty, arg) -> U.pushVar name ty arg)
+                ret <- codegenExpr body
+                I.ret ret
+            name <- U.freshLambdaName
+            U.function (AST.mkName name) ir_args ir_type blocks
     Ann (_, Ty.TCon (Ty.TC "integer")) (P.Lit (P.IntLiteral i)) -> C.int64 $ fromIntegral i
     Ann (_, Ty.TCon (Ty.TC "double")) (P.Lit (P.IntLiteral i)) -> C.double $ fromIntegral i
     Ann (_, _) (P.Lit (P.DoubleLiteral d)) -> C.double d
     Ann (_, _) (P.Lit (P.BooleanLiteral b)) -> C.bit (if b then 1 else 0)
     Ann (_, _) (P.Lit P.VoidLiteral) -> error "Void literal"
+    Ann _ node -> error ("Codegen: Node not supported (" <> show node <> ")")
 
 specializeFunction :: Ty.Type -> U.FnDecl -> U.CodegenTopLevel AST.Operand
 specializeFunction
     fn_ty@(t_args Ty.:-> t_ret_ty)
-    U.FnDecl { body = Just (P.Defn defnTy name args ret_ty body) } = mdo
+    U.FnDecl { body = Just (P.Defn _ name args _ body) } = mdo
         let arg_types = map (\(Ann (_, ty) _) -> ty) args
         let varMap = flip execState Map.empty $ forM (zip t_args arg_types) $ \(t, a) ->
              case a of
@@ -282,7 +292,7 @@ specializeFunction
         let ir_type = t_ret_ty |> U.irType
         U.pushImpl name fn_ty fn
         blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ U.runCodegen $ do
-            entry <- Mn.block `Mn.named` "entry"
+            _ <- Mn.block `Mn.named` "entry"
             op_args <- forM (zip args t_args) $ \(Ann _ (P.Arg name _), ty) -> do
                 arg <- I.alloca (U.irType ty) Nothing 0
                 name <- Mn.fresh `Mn.named` toShort (pack name)
@@ -292,7 +302,7 @@ specializeFunction
             let names = map (\(Ann _ (P.Arg name _)) -> name) args
             let types = map (snd . annotation) args
             op_args |> zip3 names types
-                    |> mapM (\(name, ty, arg) -> U.pushVar name ty arg)
+                    |> mapM_ (\(name, ty, arg) -> U.pushVar name ty arg)
             ret <- codegenExpr specialized_body
             I.ret ret
         fn <- U.function (AST.mkName final_name) ir_args ir_type blocks
@@ -303,42 +313,41 @@ codegenAST :: P.AST (L.Range, Ty.Type) -> AST.Module
 codegenAST stmts =
     let topLevel = do
             printf <- U.externVarArgs (AST.mkName "printf") [(AST.mkName "fmt", T.ptr T.i8)] T.i32
-            doubleFmt <- U.stringPtr "%lf\n" "PRINT_DOUBLE"
-            intFmt <- U.stringPtr "%ld\n" "PRINT_INT"
-            voidFmt <- U.stringPtr "()\n" "PRINT_VOID"
-            strFmt <- U.stringPtr "%s\n" "PRINT_STR"
-            trueStr <- U.stringPtr "true" "TRUE_STR"
-            falseStr <- U.stringPtr "false" "FALSE_STR"
+            doubleFmt <- U.preludeStringPtr "%lf\n" "PRINT_DOUBLE"
+            intFmt <- U.preludeStringPtr "%ld\n" "PRINT_INT"
+            strFmt <- U.preludeStringPtr "%s\n" "PRINT_STR"
+            trueStr <- U.preludeStringPtr "true" "TRUE_STR"
+            falseStr <- U.preludeStringPtr "false" "FALSE_STR"
             let printGenericProto = [("T", ["Show"])] Ty.:=> ["a"] Ty.:-> Ty.void
             U.pushDecl "print" printGenericProto Nothing
-            printDouble <- M.function (AST.mkName "print_double") [(U.double, M.ParameterName "n")] U.void $ \[n] -> mdo
-                entry <- Mn.block `Mn.named` "entry"
-                I.call printf [(doubleFmt, []), (n, [])]
+            printDouble <- U.preludeFunction (AST.mkName "print_double") [(U.double, M.ParameterName "n")] U.void $ \[n] -> mdo
+                _ <- Mn.block `Mn.named` "entry"
+                _ <- I.call printf [(doubleFmt, []), (n, [])]
                 return ()
             U.pushImpl "print" ([Ty.double] Ty.:-> Ty.void) printDouble
-            printInt <- M.function (AST.mkName "print_int") [(U.int, M.ParameterName "n")] U.void $ \[n] -> mdo
-                entry <- Mn.block `Mn.named` "entry"
-                I.call printf [(intFmt, []), (n, [])]
+            printInt <- U.preludeFunction (AST.mkName "print_int") [(U.int, M.ParameterName "n")] U.void $ \[n] -> mdo
+                _ <- Mn.block `Mn.named` "entry"
+                _ <- I.call printf [(intFmt, []), (n, [])]
                 return ()
             U.pushImpl "print" ([Ty.int] Ty.:-> Ty.void) printInt
-            printBool <- M.function (AST.mkName "print_bool") [(U.bool, M.ParameterName "n")] U.void $ \[n] -> mdo
-                entry <- Mn.block `Mn.named` "entry"
+            printBool <- U.preludeFunction (AST.mkName "print_bool") [(U.bool, M.ParameterName "n")] U.void $ \[n] -> mdo
+                _ <- Mn.block `Mn.named` "entry"
                 ret <- I.select n trueStr falseStr
-                I.call printf [(strFmt, []), (ret, [])]
+                _ <- I.call printf [(strFmt, []), (ret, [])]
                 return ()
             U.pushImpl "print" ([Ty.bool] Ty.:-> Ty.void) printBool
             Pre.prelude
             mapM_ codegenStmt stmts
             exps <- gets $ \env -> env |> U.exprs |> reverse
             blocks <- Mn.execIRBuilderT Mn.emptyIRBuilder $ do
-                entry <- Mn.block `Mn.named` "entry"
-                forM_ exps $ \(ty, exp) -> do
-                    ret <- I.call exp []
+                _ <- Mn.block `Mn.named` "entry"
+                forM_ exps $ \(ty, expr) -> do
+                    ret <- I.call expr []
                     let prototype = [ty] Ty.:-> Ty.void
                     maybe_decl <- U.getImpl "print" prototype
                     case maybe_decl of
-                        Nothing -> error $ "Function \"print\" not found: " <> show prototype
-                        Just impl -> I.call impl [(ret, [])]
+                        Nothing -> return () -- error $ "Function \"print\" not found: " <> show prototype
+                        Just impl -> void $ I.call impl [(ret, [])]
                 ret <- C.int64 0
                 I.ret ret
             U.function (AST.mkName "main") [] T.i64 blocks
@@ -357,5 +366,7 @@ defaultEnv :: U.Env
 defaultEnv = U.Env {
     U.vars = [Map.empty],
     U.decls = Map.empty,
-    U.exprs = []
+    U.exprs = [],
+    U.anon_count = 0,
+    U.lambda_count = 0
 }

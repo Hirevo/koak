@@ -1,0 +1,8 @@
+
+def add2(n:integer): integer
+    n + 2;
+
+def binary |> 2 (x:integer f:(integer) -> integer): integer
+    f(x);
+
+5 |> add2;

@@ -1,37 +1,28 @@
 {-# LANGUAGE NamedFieldPuns #-}
 module Main where
 
-import Annotation
 import Misc
 import Types hiding (void)
 import Parser.Lib hiding (Parser)
 import Parser.Lang hiding (argument)
-import Passes.Deserialization
+-- import Passes.Deserialization
 import Passes.Inference as I
 import Control.Monad.State.Lazy
-import Control.Monad.Except
-import Control.Exception.Base
 import System.Exit
 import Options.Applicative
 
 import Codegen.Codegen (codegenAST)
-import System.Environment (getArgs)
-import Data.Text.Lazy (toStrict, unpack)
+import Data.Text.Lazy (unpack)
 import LLVM.Pretty (ppllvm)
-import Data.List (intercalate)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Error (ioeGetErrorString, userError, ioError, catchIOError)
 import Foreign.Ptr (FunPtr, castFunPtr)
 import Control.Monad (void)
 
-import qualified Data.Map as Map
-import qualified Data.Text.IO as TIO
 import qualified LLVM.ExecutionEngine as EE
 import qualified LLVM.Context as Ctx
 import qualified LLVM.AST as AST
 import qualified LLVM.Module as Mdl
-import qualified LLVM.PassManager as Pm
-import qualified LLVM.Target as Tgt
 import qualified System.Process as Pcs
 
 foreign import ccall "dynamic" haskFun :: FunPtr (IO Int) -> IO Int
@@ -124,11 +115,11 @@ main = flip catchIOError (\err -> do
                             putStrLn ""
                         False -> return ()
                     Ctx.withContext $ \ctx -> do
-                        let mod = codegenAST types
-                        -- mod |> ppllvm |> unpack |> putStrLn
+                        let mdl = codegenAST types
+                        -- mdl |> ppllvm |> unpack |> putStrLn
                         case llvm_ir opts of
                             Just ir_file -> do
-                                let ir = mod |> ppllvm |> unpack
+                                let ir = mdl |> ppllvm |> unpack
                                 ir |> writeFile ir_file
                                 case output opts of
                                     Just file -> void (ir |> Pcs.readCreateProcess
@@ -138,15 +129,15 @@ main = flip catchIOError (\err -> do
                                     Just file ->
                                         void (Pcs.readCreateProcess
                                             (Pcs.shell $ "cc -O3 -xir - -o '" <> file <> "' -lm")
-                                            (mod |> ppllvm |> unpack))
+                                            (mdl |> ppllvm |> unpack))
                                     Nothing -> return ()
-                        Mdl.withModuleFromAST ctx mod $ \mod' -> do
+                        Mdl.withModuleFromAST ctx mdl $ \mdl' -> do
                             case bitcode opts of
-                                Just bc_file -> Mdl.writeBitcodeToFile (Mdl.File bc_file) mod'
+                                Just bc_file -> Mdl.writeBitcodeToFile (Mdl.File bc_file) mdl'
                                 Nothing -> return ()
                             case silent opts of
                                 True -> return ()
-                                False -> withJIT ctx $ \ecjit -> EE.withModuleInEngine ecjit mod' $ \ee -> do
+                                False -> withJIT ctx $ \ecjit -> EE.withModuleInEngine ecjit mdl' $ \ee -> do
                                     mainfn <- EE.getFunction ee (AST.mkName "main")
                                     case mainfn of
                                         Just fn -> Control.Monad.void $ run fn
