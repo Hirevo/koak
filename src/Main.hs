@@ -7,6 +7,7 @@ import Parser.Lib hiding (Parser)
 import Parser.Lang hiding (argument)
 -- import Passes.Deserialization
 import Passes.Inference as I
+import Passes.Deserialization as Des
 import Control.Monad.State.Lazy
 import System.Exit
 import Options.Applicative
@@ -57,6 +58,7 @@ data Options = Options {
     output      :: Maybe String,
     llvm_ir     :: Maybe String,
     bitcode     :: Maybe String,
+    deserialize :: Bool,
     ast         :: Bool,
     builtins    :: Bool,
     silent      :: Bool,
@@ -75,6 +77,9 @@ optsParser = Options
     <*> optional (strOption $ long "bitcode"
                            <> metavar "FILE"
                            <> help "Write LLVM bitcode to FILE")
+    <*> switch (long "deserialize"
+                           <> short 'd'
+                           <> help "Display the deserialized result")
     <*> switch (long "ast"
                 <> short 'a'
                 <> help "Display the internal AST")
@@ -112,6 +117,12 @@ main = flip catchIOError (\err -> do
                         True -> do
                             putStrLn "AST:"
                             types |> show |> putStrLn
+                            putStrLn ""
+                        False -> return ()
+                    case deserialize opts of
+                        True -> do
+                            putStrLn "Deserialized:"
+                            putStrLn $ Des.deserializeAST parsed
                             putStrLn ""
                         False -> return ()
                     Ctx.withContext $ \ctx -> do

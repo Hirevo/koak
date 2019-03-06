@@ -13,41 +13,58 @@ import qualified Parser.Lang as P
 
 deserializeArg :: Ann a P.Arg -> String
 deserializeArg (Ann _ (P.Arg name ty)) =
-    error "Not implemented (Arg)"
+    name ++ ":" ++ show ty
 
 deserializeStmt :: Ann a (P.Stmt a) -> String
 deserializeStmt = \case
     Ann _ (P.Defn defn_ty name args ret_ty body) ->
-        error "Not implemented (Defn)"
+        "def " ++ 
+            case defn_ty of
+                P.Binary (P.LeftAssoc value) -> "binary " ++ name ++ " " ++ show value ++ " left "
+                P.Binary (P.RightAssoc value) -> "binary " ++ name ++ " " ++ show value ++ " right "
+                P.Unary value -> "unary " ++ name ++ " " ++ show value ++ " "
+                _ -> name
+            ++ "(" ++ (args |> map deserializeArg |> intercalate " ") ++ "): " ++ show ret_ty ++ "\n\t" ++ deserializeExpr body ++ ";"
     Ann _ (P.Expr expr) ->
-        error "Not implemented (Expr)"
+        deserializeExpr expr ++ ";"
     Ann _ (P.Extern name args ret_ty) ->
-        error "Not implemented (Extern)"
+        "extern " ++ name ++ "(" ++ (args |> map deserializeArg |> intercalate " ") ++ "): " ++ show ret_ty ++ ";"
+    --Ann _ (P.Struct name args) ->
+        --"struct " ++ name ++ (args |> map deserializeArg |> intercalate " ") ++ ";"
 
 deserializeExpr :: Ann a (P.Expr a) -> String
 deserializeExpr = \case
+    Ann _ (P.Lambda args body) ->
+        --TODO: Show args ?
+        "(" ++ " -> " ++ deserializeExpr body ++ ")"
     Ann _ (P.For init cond oper body) ->
-        error "Not implemented (For)"
+        "(for " ++ deserializeExpr init ++ ", " ++ deserializeExpr cond ++ ", " ++ deserializeExpr oper ++ " in\n\t" ++ deserializeExpr body ++ ")"
     Ann _ (P.If cond then_body else_body) ->
-        error "Not implemented (If)"
+            "(if " ++ deserializeExpr cond ++ " then " ++ deserializeExpr then_body ++
+                case else_body of
+                    Just else_body ->
+                        " else " ++ deserializeExpr else_body
+                    _ ->
+                        "if " ++ deserializeExpr cond ++ " then " ++ deserializeExpr then_body
+                ++ ")"
     Ann _ (P.While cond body) ->
-        error "Not implemented (While)"
+        "(while " ++ deserializeExpr cond ++ " do " ++ deserializeExpr body ++ ")"
     Ann _ (P.Call (Ann _ name) args) ->
-        error "Not implemented (Call)"
+        name ++ "(" ++ (args |> map deserializeExpr |> intercalate ", ") ++ ")"
     Ann _ (P.Bin (Ann _ name) lhs rhs) ->
-        error "Not implemented (Bin)"
+        deserializeExpr lhs ++ " " ++ name ++ " " ++ deserializeExpr rhs
     Ann _ (P.Un (Ann _ name) rhs) ->
-        error "Not implemented (Un)"
+        name ++ deserializeExpr rhs
     Ann _ (P.Ident ident) ->
-        error "Not implemented (Ident)"
+        ident
     Ann _ (P.Lit lit@(P.IntLiteral value)) ->
-        error "Not implemented (IntLiteral)"
+        show value
     Ann _ (P.Lit lit@(P.DoubleLiteral value)) ->
-        error "Not implemented (DoubleLiteral)"
+        show value
     Ann _ (P.Lit lit@(P.BooleanLiteral value)) ->
-        error "Not implemented (BooleanLiteral)"
+        show value
     Ann _ (P.Lit lit@P.VoidLiteral) ->
-        error "Not implemented (VoidLiteral)"
+        ""
 
 deserializeAST :: P.AST a -> String
 deserializeAST stmts = stmts |> map deserializeStmt
