@@ -78,8 +78,8 @@ optsParser = Options
                            <> metavar "FILE"
                            <> help "Write LLVM bitcode to FILE")
     <*> switch (long "deserialize"
-                           <> short 'd'
-                           <> help "Display the deserialized result")
+                <> short 'd'
+                <> help "Display the deserialized result")
     <*> switch (long "ast"
                 <> short 'a'
                 <> help "Display the internal AST")

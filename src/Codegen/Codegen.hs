@@ -313,7 +313,7 @@ codegenAST :: P.AST (L.Range, Ty.Type) -> AST.Module
 codegenAST stmts =
     let topLevel = do
             printf <- U.externVarArgs (AST.mkName "printf") [(AST.mkName "fmt", T.ptr T.i8)] T.i32
-            doubleFmt <- U.preludeStringPtr "%lf\n" "PRINT_DOUBLE"
+            doubleFmt <- U.preludeStringPtr "%.1lf\n" "PRINT_DOUBLE"
             intFmt <- U.preludeStringPtr "%ld\n" "PRINT_INT"
             strFmt <- U.preludeStringPtr "%s\n" "PRINT_STR"
             trueStr <- U.preludeStringPtr "true" "TRUE_STR"

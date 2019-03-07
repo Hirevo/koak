@@ -13,23 +13,23 @@ import Control.Monad.State.Lazy
 import Data.Char (isSpace)
 import Data.List (sortBy)
 
-type Located a = Ann Range a;
-type LocatedArg = Located Arg;
-type LocatedExpr = Located (Expr Range);
-type LocatedStmt = Located (Stmt Range);
-type LocatedAST = AST Range;
+type Located a = Ann Range a
+type LocatedArg = Located Arg
+type LocatedExpr = Located (Expr Range)
+type LocatedStmt = Located (Stmt Range)
+type LocatedAST = AST Range
 
-type Typed a = Ann (Range, Type) a;
-type TypedArg = Typed Arg;
-type TypedExpr = Typed (Expr (Range, Type));
-type TypedStmt = Typed (Stmt (Range, Type));
-type TypedAST = AST (Range, Type);
+type Typed a = Ann (Range, Type) a
+type TypedArg = Typed Arg
+type TypedExpr = Typed (Expr (Range, Type))
+type TypedStmt = Typed (Stmt (Range, Type))
+type TypedAST = AST (Range, Type)
 
-type Schemed a = Ann (Range, Scheme) a;
-type SchemedArg = Schemed Arg;
-type SchemedExpr = Schemed (Expr (Range, Scheme));
-type SchemedStmt = Schemed (Stmt (Range, Scheme));
-type SchemedAST = AST (Range, Scheme);
+type Schemed a = Ann (Range, Scheme) a
+type SchemedArg = Schemed Arg
+type SchemedExpr = Schemed (Expr (Range, Scheme))
+type SchemedStmt = Schemed (Stmt (Range, Scheme))
+type SchemedAST = AST (Range, Scheme)
 
 data PrecMap = PrecMap {
     bin_prec :: [(String, Assoc Int)],

@@ -8,14 +8,14 @@ radius = sradius = default();
 x = sx = default();
 y = sy = default();
 
-for radius = default() + 2.0, 1, radius = radius + 1.0 in
-    (if (radius = (radius % 7.0)) == 0.0
-        then radius = radius + 2.0
+for radius = default() + 2, 1, radius = radius + 1 in
+    (if (radius = (radius % 7)) == 0
+        then radius = radius + 2
         else radius) :
     (sradius = radius * radius) :
-    (for y = -sradius, y < sradius, y = y + 1.0 in
+    (for y = -sradius, y < sradius, y = y + 1 in
         (sy = y * y) :
-        (for x = -sradius, x < sradius, x = x + 1.0 in
+        (for x = -sradius, x < sradius, x = x + 1 in
             (sx = x * x) :
             (if sqrt(sx + sy) < sradius
                 then (putchar(42) : putchar(42))
