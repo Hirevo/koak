@@ -83,6 +83,6 @@ test 'Lambdas (Simple)' \
 
 test 'Lambdas (Advanced inference)' \
      'f = (x -> x * 2.0); f(8);' \
-     $'16.000000';
+     $'16.0';
 
 echo;

@@ -7,7 +7,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE LambdaCase #-}
 module Codegen.Codegen where
-    
+
 import Misc
 import Annotation
 import Control.Monad.Except
@@ -126,13 +126,14 @@ codegenExpr = \case
             I.br for_cond_in
             for_end <- Mn.block `Mn.named` "for.end"
             I.phi [(val, for_cond_out)]
-    Ann (_, _) (P.If cond then_body else_block) ->
+    Ann (_, ty) (P.If cond then_body else_block) ->
         U.withScope $ mdo
             cond_ret <- codegenExpr cond
             inv_impl <- fmap fromJust $ U.getImpl "unary_!" ([snd (annotation cond)] Ty.:-> Ty.int)
             cond_inv <- I.call inv_impl [(cond_ret, [])]
             zero <- C.int64 0
             bool <- I.icmp IPred.EQ cond_inv zero
+            entry <- Mn.currentBlock
             case else_block of
                 Just else_body -> mdo
                     I.condBr bool if_then_in if_else_in
@@ -153,7 +154,7 @@ codegenExpr = \case
                     if_then_out <- Mn.currentBlock
                     I.br if_end
                     if_end <- Mn.block `Mn.named` "if.end"
-                    I.phi [(ret_then, if_then_out)]
+                    I.phi [(ret_then, if_then_out), (AST.ConstantOperand $ U.defaultValue ty, entry)]
     Ann (_, ty) (P.While cond body) ->
         U.withScope $ mdo
             I.br while_cond_in
